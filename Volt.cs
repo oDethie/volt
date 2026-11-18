@@ -495,8 +495,8 @@ class App : ApplicationContext
         for (int i = 0; i < 20; i++) new NotifyIcon().Dispose();
         icone = new NotifyIcon { Visible = false, Text = "Volt" };
         icone.MouseUp += (s, e) => { if (e.Button == MouseButtons.Left) painel.Alternar(); };
-        icone.ContextMenuStrip = menu;
-        menu.Opening += (s, e) => { MenuAberto = true; MontarMenu(); };
+        icone.MouseUp += (s, e) => { if (e.Button == MouseButtons.Right) MenuEm(Cursor.Position); };
+        menu.Opening += (s, e) => { MenuAberto = true; };
         menu.Closed += (s, e) => { MenuAberto = false; ConferirPainel(); };
 
         tDebounce.Tick += (s, e) => { tDebounce.Stop(); pedido.Set(); };
@@ -753,7 +753,7 @@ class App : ApplicationContext
             {
                 ni = new NotifyIcon();
                 ni.MouseUp += (s, e) => { if (e.Button == MouseButtons.Left) painel.Alternar(); };
-                ni.ContextMenuStrip = menu;
+                ni.MouseUp += (s, e) => { if (e.Button == MouseButtons.Right) MenuEm(Cursor.Position); };
                 numeros[a.Chave] = ni;
             }
             int nv = Volt.Nivel(a, LimiteDe(a));
@@ -774,8 +774,20 @@ class App : ApplicationContext
             MenuAberto = true;
             MontarMenu();
             SetForegroundWindow(invocador.Handle);
-            menu.Show(p, ToolStripDropDownDirection.AboveLeft);
+            MostrarDentro(menu, p);
         });
+    }
+
+    // abre o menu inteiro na tela onde foi o clique (nunca vaza para o outro monitor)
+    public static void MostrarDentro(ToolStripDropDown m, Point p)
+    {
+        var sz = m.GetPreferredSize(Size.Empty);
+        var t = Screen.FromPoint(p).Bounds;
+        int x = p.X + sz.Width <= t.Right ? p.X : p.X - sz.Width;
+        int y = p.Y - sz.Height >= t.Top ? p.Y - sz.Height : p.Y;
+        x = Math.Max(t.Left, Math.Min(x, t.Right - sz.Width));
+        y = Math.Max(t.Top, Math.Min(y, t.Bottom - sz.Height));
+        m.Show(new Point(x, y), ToolStripDropDownDirection.BelowRight);
     }
 
     public void FixarNaBarra(Estado a, bool v) { a.NaBarra = v; SalvarConfig(); Mudou(); }

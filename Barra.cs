@@ -74,11 +74,11 @@ class Barra
     // desenha a faixa (tambem usado pela previa --testefaixa): icone do aparelho + numero ao lado
     public static Bitmap Renderizar(List<Estado> itens, bool claro, float e, int h, Func<Estado, int> limiteDe)
     {
-        Color texto = claro ? Color.FromArgb(27, 27, 27) : Color.FromArgb(240, 240, 240);
+        Color texto = claro ? Color.FromArgb(20, 20, 20) : Color.White;
         // proporcional a altura da barra (48 px a 100%)
         e = h / 48f;
-        int pad = (int)Math.Round(4 * e), gap = (int)Math.Round(10 * e), gTam = (int)Math.Round(13 * e), gGap = (int)Math.Round(4 * e);
-        using (var f = new Font("Segoe UI", 10.5f * e, GraphicsUnit.Pixel))
+        int pad = (int)Math.Round(4 * e), gap = (int)Math.Round(10 * e), gTam = (int)Math.Round(14 * e), gGap = (int)Math.Round(5 * e);
+        using (var f = new Font("Segoe UI Semibold", 12f * e, GraphicsUnit.Pixel))
         using (var medir = Graphics.FromHwnd(IntPtr.Zero))
         {
             medir.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
@@ -97,7 +97,7 @@ class Barra
             {
                 g.Clear(Color.FromArgb(1, 0, 0, 0));       // quase transparente: assim recebe os cliques
                 g.SmoothingMode = SmoothingMode.AntiAlias;
-                g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+                g.TextRenderingHint = TextRenderingHint.AntiAlias;
                 float x = pad;
                 for (int i = 0; i < itens.Count; i++)
                 {

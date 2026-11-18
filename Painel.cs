@@ -445,6 +445,6 @@ class Painel : Form
         app.MenuAberto = true;
         m.Closed += (s, e) => { Alterna.Fechou(chave); app.MenuAberto = false; app.ConferirPainel(); };
         Alterna.Abriu(chave, m);
-        m.Show(this, PointToClient(Cursor.Position));
+        App.MostrarDentro(m, Cursor.Position);
     }
 }
