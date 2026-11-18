@@ -71,51 +71,48 @@ class Barra
     // a barra foi recriada (Explorer reiniciou): comeca de novo
     public void Recriar() { var l = itens; Fechar(); if (l.Count > 0) Mostrar(l, claro); }
 
-    // desenha a faixa (tambem usado pela previa --testefaixa)
+    // desenha a faixa (tambem usado pela previa --testefaixa):
+    // icone do aparelho + numero pequeno com uma barrinha da bateria embaixo (cor do nivel)
     public static Bitmap Renderizar(List<Estado> itens, bool claro, float e, int h, Func<Estado, int> limiteDe)
     {
-        Color texto = claro ? Color.FromArgb(27, 27, 27) : Color.White;
-        int pad = (int)Math.Round(8 * e), gap = (int)Math.Round(14 * e), gTam = (int)Math.Round(16 * e), gGap = (int)Math.Round(5 * e);
-        using (var f = new Font("Segoe UI Semibold", 13.5f * e, GraphicsUnit.Pixel))
+        Color texto = claro ? Color.FromArgb(27, 27, 27) : Color.FromArgb(235, 235, 235);
+        int pad = (int)Math.Round(6 * e), gap = (int)Math.Round(12 * e), gTam = (int)Math.Round(14 * e), gGap = (int)Math.Round(5 * e);
+        float bh = Math.Max(2f, 2.5f * e), minBarra = 22 * e;
+        using (var f = new Font("Segoe UI", 10.5f * e, GraphicsUnit.Pixel))
         using (var medir = Graphics.FromHwnd(IntPtr.Zero))
         {
             medir.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
-            var larg = new List<int>();
-            int w = pad;
+            var larg = new List<float>();
+            float w = pad;
             foreach (var a in itens)
             {
                 string t = a.Pct < 0 ? "?" : a.Pct + "%";
-                int tw = (int)Math.Ceiling(medir.MeasureString(t, f, PointF.Empty, StringFormat.GenericTypographic).Width);
-                int iw = gTam + gGap + tw + (a.Carregando ? (int)Math.Round(14 * e) : 0);
-                larg.Add(iw);
-                w += iw + gap;
+                float tw = Math.Max(medir.MeasureString(t, f, PointF.Empty, StringFormat.GenericTypographic).Width, minBarra);
+                larg.Add(tw);
+                w += gTam + gGap + tw + gap;
             }
             w += pad - gap;
-            var bmp = new Bitmap(Math.Max(1, w), Math.Max(1, h), System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            var bmp = new Bitmap(Math.Max(1, (int)Math.Ceiling(w)), Math.Max(1, h), System.Drawing.Imaging.PixelFormat.Format32bppArgb);
             using (var g = Graphics.FromImage(bmp))
             {
                 g.Clear(Color.FromArgb(1, 0, 0, 0));       // quase transparente: assim recebe os cliques
                 g.SmoothingMode = SmoothingMode.AntiAlias;
                 g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
-                int x = pad;
+                float x = pad;
                 for (int i = 0; i < itens.Count; i++)
                 {
                     var a = itens[i];
                     int nivel = Volt.Nivel(a, limiteDe(a));
-                    Color cTexto = nivel == 2 ? Volt.Vermelho(!claro) : texto;
-                    using (var gl = Desenho.Glifo(Volt.Glifo(a.Tipo), gTam, cTexto, 0.95f)) g.DrawImage(gl, x, (h - gTam) / 2);
+                    Color cBarra = Volt.CorNivel(nivel, !claro);
+                    using (var gl = Desenho.Glifo(Volt.Glifo(a.Tipo), gTam, texto, 0.95f)) g.DrawImage(gl, (int)Math.Round(x), (h - gTam) / 2);
+                    x += gTam + gGap;
                     string t = a.Pct < 0 ? "?" : a.Pct + "%";
-                    using (var b = new SolidBrush(cTexto))
-                    {
-                        var sz = g.MeasureString(t, f, PointF.Empty, StringFormat.GenericTypographic);
-                        g.DrawString(t, f, b, x + gTam + gGap, (h - sz.Height) / 2f - 0.5f * e, StringFormat.GenericTypographic);
-                    }
-                    if (a.Carregando)
-                    {
-                        int bt = (int)Math.Round(12 * e);
-                        using (var gl = Desenho.Glifo('', bt, Volt.Azul(!claro), 1f)) g.DrawImage(gl, x + larg[i] - bt, (h - bt) / 2);
-                    }
-                    x += larg[i] + gap;
+                    var sz = g.MeasureString(t, f, PointF.Empty, StringFormat.GenericTypographic);
+                    using (var b = new SolidBrush(texto)) g.DrawString(t, f, b, x, h / 2f - 3 * e - sz.Height / 2f, StringFormat.GenericTypographic);
+                    float by = h / 2f + 6 * e, bw = larg[i];
+                    using (var b = new SolidBrush(Color.FromArgb(60, texto))) g.FillRectangle(b, x, by, bw, bh);
+                    if (a.Pct > 0) using (var b = new SolidBrush(cBarra)) g.FillRectangle(b, x, by, Math.Max(bh, bw * a.Pct / 100f), bh);
+                    x += bw + gap;
                 }
             }
             return bmp;
