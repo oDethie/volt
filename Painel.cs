@@ -311,13 +311,7 @@ class Painel : Form
         return y + hBase + hGraf + E(8);
     }
 
-    string Previsao(Estado a)
-    {
-        if (a.Dormindo) return "dormindo · visto " + Volt.Ha(a.Visto);
-        double h = Historico.Previsao(a);
-        if (a.Carregando) return a.Pct >= 100 ? "carregado" : h > 0 ? "cheio em " + Volt.Duracao(h) : "carregando";
-        return h > 0 ? "dura " + Volt.Duracao(h) : "";
-    }
+    string Previsao(Estado a) { return app.PrevisaoTexto(a); }
 
     // grafico das ultimas 48 h (ou desde o primeiro ponto)
     void Grafico(Graphics g, Estado a, Rectangle r, Color cor)

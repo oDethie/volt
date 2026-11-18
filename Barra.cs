@@ -74,6 +74,14 @@ class Barra
     // desenha a faixa (tambem usado pela previa --testefaixa): icone do aparelho + numero ao lado
     public static Bitmap Renderizar(List<Estado> itens, bool claro, float e, int h, Func<Estado, int> limiteDe)
     {
+        List<RectangleF> z;
+        return Renderizar(itens, claro, e, h, limiteDe, out z);
+    }
+
+    // zonas: onde cada aparelho ficou (para o cartao ao passar o mouse)
+    public static Bitmap Renderizar(List<Estado> itens, bool claro, float e, int h, Func<Estado, int> limiteDe, out List<RectangleF> zonas)
+    {
+        zonas = new List<RectangleF>();
         Color texto = claro ? Color.FromArgb(20, 20, 20) : Color.White;
         // proporcional a altura da barra (48 px a 100%)
         e = h / 48f;
@@ -114,6 +122,7 @@ class Barra
                         int bt = (int)Math.Round(10 * e);
                         using (var gl = Desenho.Glifo('\uE945', bt, Volt.Azul(!claro), 1f)) g.DrawImage(gl, (int)(x + sz.Width + 1 * e), (h - bt) / 2);
                     }
+                    zonas.Add(new RectangleF(x - gTam - gGap - gap / 2f, 0, gTam + gGap + larg[i] + gap, h));
                     x += larg[i] + gap;
                 }
             }
@@ -149,6 +158,11 @@ class Faixa : NativeWindow
     public readonly IntPtr BarraPai;
     readonly bool principal;
     Size tam;
+    List<RectangleF> zonas = new List<RectangleF>();
+    List<Estado> lista = new List<Estado>();
+    int sobre = -1;
+    [DllImport("user32.dll")] static extern bool TrackMouseEvent(ref TRACK t);
+    [StructLayout(LayoutKind.Sequential)] struct TRACK { public int Tam; public uint Flags; public IntPtr H; public uint Tempo; }
 
     public Faixa(App a, IntPtr barra, bool principal) { app = a; BarraPai = barra; this.principal = principal; }
 
@@ -175,8 +189,10 @@ class Faixa : NativeWindow
     {
         if (Handle == IntPtr.Zero) return;
         RECT rb; GetWindowRect(BarraPai, out rb);
-        using (var bmp = Barra.Renderizar(itens, claro, Escala, rb.B - rb.T, app.LimiteDe))
+        List<RectangleF> z;
+        using (var bmp = Barra.Renderizar(itens, claro, Escala, rb.B - rb.T, app.LimiteDe, out z))
         {
+            zonas = z; lista = itens;
             tam = bmp.Size;
             Posicionar();
             Aplicar(bmp);
@@ -229,8 +245,28 @@ class Faixa : NativeWindow
 
     protected override void WndProc(ref Message m)
     {
-        if (m.Msg == 0x0202 /*LBUTTONUP*/) { app.AbrirPainel(); return; }
-        if (m.Msg == 0x0205 /*RBUTTONUP*/) { app.MenuEm(Cursor.Position); return; }
+        if (m.Msg == 0x0200 /*MOUSEMOVE*/)
+        {
+            if (sobre < 0) { var t = new TRACK { Tam = Marshal.SizeOf(typeof(TRACK)), Flags = 2 /*LEAVE*/, H = Handle }; TrackMouseEvent(ref t); }
+            int x = (short)(m.LParam.ToInt32() & 0xFFFF), i = zonas.FindIndex(z => x >= z.Left && x < z.Right);
+            if (i != sobre)
+            {
+                sobre = i;
+                if (i < 0 || i >= lista.Count) app.EsconderDica();
+                else
+                {
+                    RECT r; GetWindowRect(Handle, out r);
+                    RECT rb; GetWindowRect(BarraPai, out rb);
+                    var z = zonas[i];
+                    var sr = new Rectangle(r.L + (int)z.Left, r.T, (int)z.Width, r.B - r.T);
+                    bool emCima = rb.T <= Screen.FromHandle(BarraPai).Bounds.Top + 4;
+                    app.MostrarDica(lista[i], sr, rb.T, emCima, Escala);
+                }
+            }
+        }
+        if (m.Msg == 0x02A3 /*MOUSELEAVE*/) { sobre = -1; app.EsconderDica(); }
+        if (m.Msg == 0x0202 /*LBUTTONUP*/) { app.EsconderDica(); app.AbrirPainel(); return; }
+        if (m.Msg == 0x0205 /*RBUTTONUP*/) { app.EsconderDica(); app.MenuEm(Cursor.Position); return; }
         if (m.Msg == 0x0021 /*MOUSEACTIVATE*/) { m.Result = new IntPtr(3); return; }
         base.WndProc(ref m);
     }

@@ -43,6 +43,14 @@ static class Program
         if (args.Length == 2 && args[0] == "--testeatualizar") { File.WriteAllLines(args[1], Atualizador.Teste()); return; }
         if (args.Length == 2 && args[0] == "--icones") { Volt.TesteIcones(args[1]); return; }
         if (args.Length == 2 && args[0] == "--testefaixa") { TesteFaixa(args[1]); return; }
+        if (args.Length == 2 && args[0] == "--testedica")
+        {
+            float e = 1.75f;
+            var ap = new Estado { Tipo = Tipo.Mouse, Pct = 52, Via = "Receptor 2.4 GHz", Visto = DateTime.Now.AddMinutes(-1) };
+            using (var b = new Bitmap((int)(240 * e), (int)(118 * e)))
+            using (var g = Graphics.FromImage(b)) { Dica.Desenhar(g, b.Size, ap, "PRO X 2", 20, "dura ~3 dias", true, e); b.Save(args[1]); }
+            return;
+        }
         if (args.Length >= 1 && args[0] == "--atualizado") Atualizado = true;
 
         MsgAbrir = RegisterWindowMessage("Volt_AbrirPainel");
@@ -765,6 +773,24 @@ class App : ApplicationContext
     }
 
     public void AbrirPainel() { Postar(() => painel.Alternar()); }
+
+    // cartao com as informacoes do aparelho ao passar o mouse na faixa
+    Dica dica;
+    public void MostrarDica(Estado a, Rectangle r, int barraTopo, bool emCima, float esc)
+    {
+        if (painel.Visible || MenuAberto) return;
+        if (dica == null) dica = new Dica(this);
+        dica.Mostrar(a, r, barraTopo, emCima, esc);
+    }
+    public void EsconderDica() { if (dica != null) dica.Esconder(); }
+
+    public string PrevisaoTexto(Estado a)
+    {
+        if (a.Dormindo) return "dormindo · visto " + Volt.Ha(a.Visto);
+        double h = Historico.Previsao(a);
+        if (a.Carregando) return a.Pct >= 100 ? "carregado" : h > 0 ? "cheio em " + Volt.Duracao(h) : "carregando";
+        return h > 0 ? "dura " + Volt.Duracao(h) : "";
+    }
 
     // menu do icone aberto a partir da faixa da barra
     public void MenuEm(Point p)
