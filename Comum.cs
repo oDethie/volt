@@ -112,18 +112,21 @@ static class Desenho
     // (desenho em grade 64x64)
     public static Bitmap Logo(int n)
     {
+        // anel de bateria (3/4 cheio) azul com um raio no centro
         var bmp = new Bitmap(n, n, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
         using (var g = Graphics.FromImage(bmp))
         {
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.PixelOffsetMode = PixelOffsetMode.HighQuality;
-            float u = n / 64f;
-            using (var p = Arred(new RectangleF(2 * u, 2 * u, 60 * u, 60 * u), 15 * u))
-            using (var b = new LinearGradientBrush(new PointF(0, 0), new PointF(n, n), Color.FromArgb(255, 196, 61), Color.FromArgb(240, 120, 20)))
-                g.FillPath(b, p);
-            // raio
-            var pts = new[] { new PointF(36 * u, 9 * u), new PointF(17 * u, 36 * u), new PointF(30 * u, 36 * u), new PointF(26 * u, 55 * u), new PointF(47 * u, 27 * u), new PointF(34 * u, 27 * u), new PointF(39 * u, 9 * u) };
-            using (var b = new SolidBrush(Color.White)) g.FillPolygon(b, pts);
+            float u = n / 64f, esp = Math.Max(1.6f, 7 * u);
+            var r = new RectangleF(4 + esp / 2 - 4 + 4 * u, 4 * u + esp / 2, 56 * u - esp, 56 * u - esp);
+            r = new RectangleF(32 * u - (28 * u - esp / 2), 32 * u - (28 * u - esp / 2), 2 * (28 * u - esp / 2), 2 * (28 * u - esp / 2));
+            using (var pn = new Pen(Color.FromArgb(70, 120, 140, 160), esp)) g.DrawEllipse(pn, r);
+            using (var pn = new Pen(Color.FromArgb(70, 160, 255), esp) { StartCap = LineCap.Round, EndCap = LineCap.Round }) g.DrawArc(pn, r, -90, 270);
+            var bas = new[] { new PointF(36, 9), new PointF(17, 36), new PointF(30, 36), new PointF(26, 55), new PointF(47, 27), new PointF(34, 27), new PointF(39, 9) };
+            var pts = new PointF[bas.Length];
+            for (int i = 0; i < bas.Length; i++) pts[i] = new PointF((32 + (bas[i].X - 32) * 0.62f) * u, (32 + (bas[i].Y - 32) * 0.62f) * u);
+            using (var br = new SolidBrush(Color.FromArgb(70, 160, 255))) g.FillPolygon(br, pts);
         }
         return bmp;
     }
