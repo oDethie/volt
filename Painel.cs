@@ -265,7 +265,7 @@ class Painel : Form
     int Cartao(Graphics g, Estado a, int y, int pad, int W)
     {
         float f = Abertura(a.Chave);
-        int hBase = E(76), hGraf = (int)Math.Round(E(118) * f);
+        int hBase = E(76), hGraf = (int)Math.Round(E(144) * f);
         var r = new Rectangle(pad, y, W - pad * 2, hBase + hGraf);
         zonas.Add(new Zona { R = r, Tipo = Z_CARTAO, A = a });
         if (g != null)
@@ -298,13 +298,16 @@ class Painel : Form
             string prev = Previsao(a);
             int pvw = prev.Length == 0 ? 0 : TextRenderer.MeasureText(g, prev, fPequena, Size.Empty, TextFormatFlags.NoPadding).Width + E(2);
             if (pvw > 0) TextRenderer.DrawText(g, prev, fPequena, new Rectangle(r3.Right - pvw, r3.Y, pvw, r3.Height), cFraco, TD);
-            string via = a.Via + (a.Aproximado ? " · nível aproximado" : "");
+            string via = a.Via + (string.IsNullOrEmpty(a.Detalhe) ? "" : " · " + a.Detalhe) + (a.Aproximado ? " · nível aproximado" : "");
             TextRenderer.DrawText(g, via, fPequena, new Rectangle(r3.X, r3.Y, r3.Width - pvw - E(8), r3.Height), cFraco, TF);
             if (hGraf > E(4))
             {
                 var est = g.Save();
                 g.SetClip(new Rectangle(r.X, r.Y + hBase, r.Width, hGraf));
                 Grafico(g, a, new Rectangle(xi, r.Y + hBase, r.Width - E(28), E(118)), cor);
+                string saude = Ciclos.Saude(a);
+                if (saude.Length == 0) saude = "Saúde: aparece depois de algumas cargas completas";
+                TextRenderer.DrawText(g, saude, fPequena, new Rectangle(xi, r.Y + hBase + E(118), r.Width - E(28), E(20)), cFraco, TF);
                 g.Restore(est);
             }
         }

@@ -43,6 +43,7 @@ static class Program
         if (args.Length == 2 && args[0] == "--testeatualizar") { File.WriteAllLines(args[1], Atualizador.Teste()); return; }
         if (args.Length == 2 && args[0] == "--icones") { Volt.TesteIcones(args[1]); return; }
         if (args.Length == 2 && args[0] == "--testefaixa") { TesteFaixa(args[1]); return; }
+        if (args.Length == 2 && args[0] == "--testebuds") { File.WriteAllLines(args[1], GalaxyBuds.Teste()); return; }
         if (args.Length == 2 && args[0] == "--testedica")
         {
             float e = 1.75f;
@@ -81,7 +82,7 @@ static class Program
         var l = new List<string>();
         var t = Stopwatch.StartNew();
         foreach (var a in Leitor.LerTudo())
-            l.Add(a.Nome + " | " + a.Via + " | " + a.Tipo + " | " + a.Pct + "%" + (a.Carregando ? " carregando" : "") + (a.Aproximado ? " (aprox.)" : "") + " | " + a.Chave);
+            l.Add(a.Nome + " | " + a.Via + " | " + a.Tipo + " | " + a.Pct + "%" + (a.Carregando ? " carregando" : "") + (a.Aproximado ? " (aprox.)" : "") + (a.Detalhe != null ? " | " + a.Detalhe : "") + " | " + a.Chave);
         l.Add("leitura: " + t.ElapsedMilliseconds + " ms");
         File.WriteAllLines(arq, l);
     }
@@ -153,7 +154,8 @@ class Estado
     public bool NaBarra;                           // sempre mostrar na barra de tarefas
     public int Limite = -1;                        // -1 = limite padrao
     public DateTime Visto;
-    public bool AvisouFraca, AvisouCritica, AvisouCheio;
+    public bool AvisouFraca, AvisouCritica, AvisouCheio, AvisouPrevisao;
+    public string Detalhe;                         // ex.: "E 80% · D 75% · estojo 40%"
     public int Prazo = 0;                          // segundos para manter o ultimo valor se sumir (receptor: aparelho dormindo)
 }
 
@@ -400,6 +402,91 @@ static class Historico
 }
 
 // =====================================================================
+//  Saude da bateria: cada descarga (do fim de uma carga ate a proxima) vira um "ciclo";
+//  comparando os ciclos recentes com os primeiros da para ver se a bateria esta durando menos.
+//  %APPDATA%\Volt\ciclos.txt (pequeno, guardado para sempre)
+// =====================================================================
+class Ciclo { public DateTime T; public double Taxa, Horas; public int Queda; }
+
+static class Ciclos
+{
+    static readonly string arq = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Volt", "ciclos.txt");
+    static readonly Dictionary<string, List<Ciclo>> ciclos = new Dictionary<string, List<Ciclo>>();
+    static readonly System.Globalization.CultureInfo inv = System.Globalization.CultureInfo.InvariantCulture;
+
+    public static void Carregar()
+    {
+        try
+        {
+            if (!File.Exists(arq)) return;
+            foreach (var l in File.ReadAllLines(arq))
+            {
+                var c = l.Split(';');
+                DateTime t; double taxa, horas; int queda;
+                if (c.Length < 5 || !DateTime.TryParseExact(c[0], "yyyyMMddHHmm", null, System.Globalization.DateTimeStyles.None, out t)) continue;
+                if (!double.TryParse(c[2], System.Globalization.NumberStyles.Float, inv, out taxa) || !double.TryParse(c[3], System.Globalization.NumberStyles.Float, inv, out horas) || !int.TryParse(c[4], out queda)) continue;
+                De(c[1]).Add(new Ciclo { T = t, Taxa = taxa, Horas = horas, Queda = queda });
+            }
+        }
+        catch (Exception ex) { Registro.Erro(ex); }
+    }
+
+    public static List<Ciclo> De(string k) { List<Ciclo> l; if (!ciclos.TryGetValue(k, out l)) ciclos[k] = l = new List<Ciclo>(); return l; }
+
+    // o aparelho comecou a carregar: mede a descarga desde a ultima carga
+    public static void Fechar(Estado a)
+    {
+        var pts = Historico.De(a.Chave);
+        int fim = pts.Count - 1;
+        if (fim < 1 || pts[fim].C) return;
+        int ini = fim;
+        while (ini > 0 && !pts[ini - 1].C) ini--;
+        double horas = (pts[fim].T - pts[ini].T).TotalHours;
+        int queda = pts[ini].Pct - pts[fim].Pct;
+        if (horas < 2 || queda < 10) return;      // descarga curta demais para dizer algo
+        var c = new Ciclo { T = DateTime.Now, Taxa = queda / horas, Horas = horas, Queda = queda };
+        De(a.Chave).Add(c);
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(arq));
+            File.AppendAllText(arq, c.T.ToString("yyyyMMddHHmm") + ";" + a.Chave.Replace(";", "") + ";" + c.Taxa.ToString("0.###", inv) + ";" +
+                c.Horas.ToString("0.##", inv) + ";" + c.Queda + "\r\n");
+        }
+        catch { }
+    }
+
+    // texto curto da saude; "" se ainda nao ha nada
+    public static string Saude(Estado a)
+    {
+        var l = De(a.Chave);
+        if (l.Count == 0) return "";
+        double media = 0; foreach (var c in l) media += c.Taxa; media /= l.Count;
+        string carga = media > 0 ? " · uma carga dura " + Volt.Duracao(100 / media) : "";
+        string n = l.Count + (l.Count == 1 ? " carga" : " cargas");
+        if (l.Count < 6) return "Saúde: medindo (" + n + ")" + carga;
+        double ini = 0, rec = 0;
+        for (int i = 0; i < 3; i++) { ini += l[i].Taxa; rec += l[l.Count - 1 - i].Taxa; }
+        double dif = rec / ini - 1;    // gastando mais rapido = durando menos
+        string s = dif > 0.15 ? "Saúde: dura " + (int)Math.Round(dif / (1 + dif) * 100) + "% menos que no começo" : "Saúde: boa";
+        return s + " · " + n + carga;
+    }
+
+    public static void Esquecer(string k)
+    {
+        ciclos.Remove(k);
+        try
+        {
+            var linhas = new List<string>();
+            foreach (var kv in ciclos)
+                foreach (var c in kv.Value)
+                    linhas.Add(c.T.ToString("yyyyMMddHHmm") + ";" + kv.Key + ";" + c.Taxa.ToString("0.###", inv) + ";" + c.Horas.ToString("0.##", inv) + ";" + c.Queda);
+            File.WriteAllLines(arq, linhas);
+        }
+        catch { }
+    }
+}
+
+// =====================================================================
 //  Janela invisivel: avisos do Windows (aparelho plugado, PC acordou, barra recriada, outra copia)
 // =====================================================================
 class Mensageiro : NativeWindow
@@ -446,7 +533,7 @@ class App : ApplicationContext
 
     // ---- configuracao ----
     public bool MostrarFracos = true, Animacoes = true, MenuLateralAberto = true, AtualizarSozinho = true;
-    public bool AvisarFraca = true, AvisarCheio = true;
+    public bool AvisarFraca = true, AvisarCheio = true, AvisarPrevisao = true;
     public int LimitePadrao = 20, Intervalo = 2;
     string tema = "auto";
     string cfgVersao = "";
@@ -485,6 +572,7 @@ class App : ApplicationContext
         bool primeiraVez = !File.Exists(arqConfig);
         LerConfig();
         Historico.Carregar();
+        Ciclos.Carregar();
         invocador.CreateControl();
         var h = invocador.Handle;
 
@@ -567,7 +655,9 @@ class App : ApplicationContext
             int antes = e.Pct;
             e.NomeOrig = a.Nome; e.Via = a.Via; e.Tipo = a.Tipo; e.Aproximado = a.Aproximado;
             if (a.Pct >= 0) e.Pct = a.Pct;
+            if (!estavaCarregando && a.Carregando) Ciclos.Fechar(e);   // comecou a carregar: guarda como foi a descarga
             e.Carregando = a.Carregando;
+            e.Detalhe = a.Detalhe;
             e.Presente = true; e.Dormindo = false; e.Visto = DateTime.Now;
             e.Prazo = a.Via.StartsWith("Receptor") ? 30 * 60 : 0;
             vistos.Add(a.Chave);
@@ -594,8 +684,15 @@ class App : ApplicationContext
         int lim = LimiteDe(a);
         if (a.Carregando || a.Pct > lim + 3) { a.AvisouFraca = false; a.AvisouCritica = false; }
         if (!a.Carregando || a.Pct < 95) a.AvisouCheio = false;
+        if (a.Carregando) a.AvisouPrevisao = false;
         if (a.Oculto || a.Pct < 0) return;
         string nome = NomeDe(a);
+        // aviso inteligente: pela previsao, nao vai durar o dia
+        if (AvisarPrevisao && !a.Carregando && !a.AvisouPrevisao && a.Pct > lim)
+        {
+            double h = Historico.Previsao(a);
+            if (h > 0 && h < 12) { a.AvisouPrevisao = true; Avisar('\uE823', nome + " deve acabar em " + Volt.Duracao(h) + ": carregue hoje"); }
+        }
         if (AvisarFraca && !a.Carregando)
         {
             if (a.Pct <= Math.Max(5, lim / 2) && !a.AvisouCritica) { a.AvisouCritica = a.AvisouFraca = true; Avisar('', nome + " com " + a.Pct + "%: carregue agora"); }
@@ -674,6 +771,7 @@ class App : ApplicationContext
     {
         aparelhos.Remove(a.Chave);
         Historico.Esquecer(a.Chave);
+        Ciclos.Esquecer(a.Chave);
         SalvarConfig(); Mudou();
     }
 
@@ -1094,6 +1192,7 @@ class App : ApplicationContext
                     case "atualizar": AtualizarSozinho = v == "1"; break;
                     case "avisar_fraca": AvisarFraca = v == "1"; break;
                     case "avisar_cheio": AvisarCheio = v == "1"; break;
+                    case "avisar_previsao": AvisarPrevisao = v == "1"; break;
                     case "limite": if (int.TryParse(v, out n) && n >= 5 && n <= 60) LimitePadrao = n; break;
                     case "intervalo": if (int.TryParse(v, out n) && n >= 1 && n <= 60) Intervalo = n; break;
                     case "tema": if (v == "auto" || v == "claro" || v == "escuro") tema = v; break;
@@ -1125,7 +1224,7 @@ class App : ApplicationContext
             var l = new List<string> {
                 "cfg=" + (cfgVersao == "3" ? "3" : "2"), "barra_fracos=" + (MostrarFracos ? 1 : 0), "animacoes=" + (Animacoes ? 1 : 0),
                 "menu_lateral=" + (MenuLateralAberto ? 1 : 0), "atualizar=" + (AtualizarSozinho ? 1 : 0),
-                "avisar_fraca=" + (AvisarFraca ? 1 : 0), "avisar_cheio=" + (AvisarCheio ? 1 : 0),
+                "avisar_fraca=" + (AvisarFraca ? 1 : 0), "avisar_cheio=" + (AvisarCheio ? 1 : 0), "avisar_previsao=" + (AvisarPrevisao ? 1 : 0),
                 "limite=" + LimitePadrao, "intervalo=" + Intervalo, "tema=" + tema };
             foreach (var a in aparelhos.Values)
                 l.Add("aparelho=" + string.Join("|", new[] { a.Chave, Limpo(a.NomeOrig), Limpo(a.Nome), a.Tipo.ToString(), Limpo(a.Via),

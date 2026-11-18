@@ -31,6 +31,7 @@ static class Leitor
         var hids = Hid.Listar();
         try { Logitech.Ler(hids, l); } catch (Exception ex) { Registro.Erro(ex); }
         try { Controles.LerXInput(l); } catch (Exception ex) { Registro.Erro(ex); }
+        try { GalaxyBuds.Ler(l); } catch (Exception ex) { Registro.Erro(ex); }
         try { Bluetooth.Ler(l); } catch (Exception ex) { Registro.Erro(ex); }
         try { HidPadrao.Ler(hids, l); } catch (Exception ex) { Registro.Erro(ex); }
         return l;
@@ -501,6 +502,39 @@ static class Bluetooth
     }
 
     class Achado { public int Pct; public string Nome; public bool Conectado; }
+
+    public class Conectado { public string Nome, Conteiner; public ulong Endereco; }
+
+    // aparelhos Bluetooth classicos conectados agora (nome, endereco e conteiner)
+    public static List<Conectado> Conectados()
+    {
+        var l = new List<Conectado>();
+        IntPtr s = SetupDiGetClassDevs(IntPtr.Zero, "BTHENUM", IntPtr.Zero, 0x04 | 0x02);
+        if (s == new IntPtr(-1)) return l;
+        try
+        {
+            var d = new SP_DEVINFO { Tam = Marshal.SizeOf(typeof(SP_DEVINFO)) };
+            var sb = new StringBuilder(512);
+            for (int i = 0; SetupDiEnumDeviceInfo(s, i, ref d); i++)
+            {
+                int req;
+                if (!SetupDiGetDeviceInstanceId(s, ref d, sb, sb.Capacity, out req)) continue;
+                string inst = sb.ToString();
+                if (!inst.StartsWith("BTHENUM\\DEV_", StringComparison.OrdinalIgnoreCase) || inst.Length < 24) continue;
+                ulong end;
+                if (!ulong.TryParse(inst.Substring(12, 12), System.Globalization.NumberStyles.HexNumber, null, out end)) continue;
+                uint t;
+                var con = Prop(s, ref d, kConectado, out t);
+                if (con == null || t != 0x11 || con[0] == 0) continue;   // so conectados (nunca chama um aparelho desligado)
+                string nome = Texto(s, ref d, kNome);
+                var cb = Prop(s, ref d, kConteiner, out t);
+                if (nome == null) continue;
+                l.Add(new Conectado { Nome = nome, Endereco = end, Conteiner = cb != null && cb.Length == 16 ? new Guid(cb).ToString() : inst });
+            }
+        }
+        finally { SetupDiDestroyDeviceInfoList(s); }
+        return l;
+    }
     public static readonly List<string> Diagnostico = new List<string>();   // para --diagnostico
 
     public static void Ler(List<Aparelho> saida)
@@ -571,6 +605,153 @@ static class Bluetooth
         foreach (var suf in new[] { " Hands-Free AG", " Hands-Free", " Avrcp Transport", " Stereo", " LE" })
             if (n.EndsWith(suf)) n = n.Substring(0, n.Length - suf.Length);
         return n.Trim();
+    }
+}
+
+// =====================================================================
+//  Samsung Galaxy Buds: esquerdo, direito e estojo.
+//  Ao abrir a conexao RFCOMM do servico da Samsung, os fones mandam sozinhos uma mensagem de estado
+//  com as tres baterias (nada e enviado a eles). Formato publico do projeto GalaxyBudsClient:
+//    FD [tam baixo][tam alto|flags] [id] [dados...] [crc baixo][crc alto] DD   (Buds+ e mais novos)
+//    FE [tipo] [tam] [id] [dados...] [crc] EE                                   (Buds original)
+//    id 0x60: dados[1]=esq, [2]=dir, [6]=estojo   id 0x61: dados[2]=esq, [3]=dir, [7]=estojo
+//    crc = CRC-16/XMODEM sobre id+dados
+// =====================================================================
+static class GalaxyBuds
+{
+    class EndBth : System.Net.EndPoint
+    {
+        readonly ulong end; readonly Guid servico;
+        public EndBth(ulong e, Guid s) { end = e; servico = s; }
+        public override System.Net.Sockets.AddressFamily AddressFamily { get { return (System.Net.Sockets.AddressFamily)32; } }
+        public override System.Net.SocketAddress Serialize()
+        {
+            var sa = new System.Net.SocketAddress((System.Net.Sockets.AddressFamily)32, 30);
+            var a = BitConverter.GetBytes(end); for (int i = 0; i < 8; i++) sa[2 + i] = a[i];
+            var g = servico.ToByteArray(); for (int i = 0; i < 16; i++) sa[10 + i] = g[i];
+            return sa;
+        }
+        public override System.Net.EndPoint Create(System.Net.SocketAddress s) { return this; }
+    }
+
+    static readonly Guid sppNovo = new Guid("2e73a4ad-332d-41fc-90e2-16bef06523f2");      // Buds2 e mais novos (FE)
+    static readonly Guid sppPadrao = new Guid("00001101-0000-1000-8000-00805f9b34fb");    // Buds+, Live, Pro
+    static readonly Guid sppAntigo = new Guid("00001102-0000-1000-8000-00805f9b34fd");    // Buds original
+
+    public static void Ler(List<Aparelho> saida)
+    {
+        foreach (var b in Bluetooth.Conectados())
+        {
+            if (b.Nome.IndexOf("Buds", StringComparison.OrdinalIgnoreCase) < 0) continue;
+            int e = -1, d = -1, c = -1;
+            if (!Status(b.Endereco, sppNovo, false, ref e, ref d, ref c) && !Status(b.Endereco, sppPadrao, false, ref e, ref d, ref c) &&
+                !Status(b.Endereco, sppAntigo, true, ref e, ref d, ref c)) continue;
+            int pct = e >= 0 && d >= 0 ? Math.Min(e, d) : Math.Max(e, d);
+            if (pct < 0) continue;
+            var det = new List<string>();
+            if (e >= 0) det.Add("E " + e + "%");
+            if (d >= 0) det.Add("D " + d + "%");
+            if (c >= 0) det.Add("estojo " + c + "%");
+            saida.Add(new Aparelho { Chave = "bt:" + b.Conteiner, Nome = b.Nome, Via = "Bluetooth", Tipo = Tipo.Fone, Pct = pct, Detalhe = string.Join(" · ", det) });
+        }
+    }
+
+    static bool Status(ulong end, Guid servico, bool antigo, ref int esq, ref int dir, ref int estojo)
+    {
+        try
+        {
+            using (var s = new System.Net.Sockets.Socket((System.Net.Sockets.AddressFamily)32, System.Net.Sockets.SocketType.Stream, (System.Net.Sockets.ProtocolType)3))
+            {
+                var r = s.BeginConnect(new EndBth(end, servico), null, null);
+                if (!r.AsyncWaitHandle.WaitOne(4000)) return false;
+                s.EndConnect(r);
+                s.ReceiveTimeout = 1000;
+                var buf = new List<byte>();
+                var fim = DateTime.Now.AddSeconds(3);
+                var pedaco = new byte[512];
+                while (DateTime.Now < fim && buf.Count < 8192)
+                {
+                    int n;
+                    try { n = s.Receive(pedaco); } catch (System.Net.Sockets.SocketException) { continue; }
+                    if (n <= 0) break;
+                    for (int i = 0; i < n; i++) buf.Add(pedaco[i]);
+                    if (Achar(buf.ToArray(), antigo, ref esq, ref dir, ref estojo)) return true;
+                }
+            }
+        }
+        catch { }
+        return false;
+    }
+
+    // teste do formato com quadros montados (sem precisar dos fones)
+    public static List<string> Teste()
+    {
+        var r = new List<string>();
+        Func<byte, byte[], bool, byte[]> quadro = (id, dados, estragar) =>
+        {
+            var corpo = new List<byte> { id }; corpo.AddRange(dados);
+            ushort c = Crc(corpo.ToArray(), 0, corpo.Count);
+            if (estragar) c ^= 1;
+            int tam = corpo.Count + 2;
+            var q = new List<byte> { 0xFD, (byte)(tam & 0xFF), (byte)(tam >> 8) };
+            q.AddRange(corpo); q.Add((byte)c); q.Add((byte)(c >> 8)); q.Add(0xDD);
+            return q.ToArray();
+        };
+        int e = -1, d = -1, c2 = -1;
+        var lixo = new byte[] { 1, 2, 3, 0xFD, 9 };
+        var q1 = quadro(0x61, new byte[] { 0, 1, 80, 75, 0, 0, 0, 40, 0 }, false);
+        var tudo = new List<byte>(lixo); tudo.AddRange(q1);
+        bool ok = Achar(tudo.ToArray(), false, ref e, ref d, ref c2);
+        r.Add((ok && e == 80 && d == 75 && c2 == 40 ? "OK " : "FALHA ") + "status estendido: E " + e + " D " + d + " estojo " + c2);
+        e = d = c2 = -1;
+        ok = Achar(quadro(0x60, new byte[] { 0, 55, 60, 0, 0, 0, 0 }, false), false, ref e, ref d, ref c2);
+        r.Add((ok && e == 55 && d == 60 && c2 == -1 ? "OK " : "FALHA ") + "status simples (estojo fechado): E " + e + " D " + d + " estojo " + c2);
+        e = d = c2 = -1;
+        ok = Achar(quadro(0x61, new byte[] { 0, 1, 80, 75, 0, 0, 0, 40, 0 }, true), false, ref e, ref d, ref c2);
+        r.Add((!ok ? "OK " : "FALHA ") + "quadro com conferencia errada e recusado");
+        return r;
+    }
+
+    static int Nivel(byte v) { return v >= 1 && v <= 100 ? v : -1; }
+
+    static ushort Crc(byte[] d, int ini, int n)
+    {
+        ushort crc = 0;
+        for (int i = 0; i < n; i++)
+        {
+            crc ^= (ushort)(d[ini + i] << 8);
+            for (int b = 0; b < 8; b++) crc = (crc & 0x8000) != 0 ? (ushort)((crc << 1) ^ 0x1021) : (ushort)(crc << 1);
+        }
+        return crc;
+    }
+
+    static bool Achar(byte[] d, bool antigo, ref int esq, ref int dir, ref int estojo)
+    {
+        byte som = (byte)(antigo ? 0xFE : 0xFD), eom = (byte)(antigo ? 0xEE : 0xDD);
+        bool achou = false;
+        for (int i = 0; i + 6 <= d.Length; i++)
+        {
+            if (d[i] != som) continue;
+            int tam;
+            if (antigo) tam = d[i + 2];
+            else
+            {
+                int cab = d[i + 1] | (d[i + 2] << 8);
+                if ((cab & 0x2000) != 0) continue;     // pedaco de firmware
+                tam = cab & 0x3FF;
+            }
+            if (tam < 3 || i + 3 + tam >= d.Length || d[i + 3 + tam] != eom) continue;
+            int corpo = i + 3;
+            ushort crc = (ushort)(d[corpo + tam - 2] | (d[corpo + tam - 1] << 8));
+            if (Crc(d, corpo, tam - 2) != crc) continue;
+            byte id = d[corpo]; int p = corpo + 1, plen = tam - 3;
+            if (id == 0x61 && plen >= 4) { esq = Nivel(d[p + 2]); dir = Nivel(d[p + 3]); if (!antigo && plen >= 8) estojo = Nivel(d[p + 7]); }
+            else if (id == 0x60 && plen >= 3) { esq = Nivel(d[p + 1]); dir = Nivel(d[p + 2]); if (!antigo && plen >= 7) estojo = Nivel(d[p + 6]); }
+            else continue;
+            achou = true;
+            i += 3 + tam;
+        }
+        return achou;
     }
 }
 

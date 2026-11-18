@@ -115,7 +115,7 @@ class Dica : Form
             using (var p = Desenho.Arred(rb, E(2.5f))) using (var b = new SolidBrush(escuro ? Color.FromArgb(70, 70, 70) : Color.FromArgb(222, 222, 222))) g.FillPath(b, p);
             if (a.Pct > 0) using (var p = Desenho.Arred(new RectangleF(rb.X, rb.Y, Math.Max(E(5), rb.Width * a.Pct / 100f), rb.Height), E(2.5f))) using (var b = new SolidBrush(cor)) g.FillPath(b, p);
             g.SmoothingMode = SmoothingMode.None;
-            string via = a.Via + (a.Aproximado ? " · aproximado" : "") + " · lido " + Volt.Ha(a.Visto);
+            string via = a.Via + (string.IsNullOrEmpty(a.Detalhe) ? "" : " · " + a.Detalhe) + (a.Aproximado ? " · aproximado" : "") + " · lido " + Volt.Ha(a.Visto);
             TextRenderer.DrawText(g, via, fPeq, new Rectangle(x, E(86), W, E(20)), cFraco, TF);
         }
     }

@@ -898,6 +898,8 @@ class Configuracoes : Form
             Cab("Bateria fraca");
             Chave("Avisar quando a bateria estiver fraca", "Um aviso quando o aparelho chega ao limite, e outro se continuar descendo", () => app.AvisarFraca, v => { app.AvisarFraca = v; app.SalvarConfig(); });
             Botao("Limite padrão", "Vale para os aparelhos sem um limite próprio", () => app.LimitePadrao + "%", r => MenuLimite(r, app.LimitePadrao, false, v => { app.LimitePadrao = v; app.SalvarConfig(); app.Mudou(); }));
+            Cab("Aviso inteligente");
+            Chave("Avisar quando não for durar o dia", "Pelo ritmo de uso, avisa quando o aparelho deve acabar nas próximas 12 horas, antes de chegar no limite", () => app.AvisarPrevisao, v => { app.AvisarPrevisao = v; app.SalvarConfig(); });
             Cab("Carga completa");
             Chave("Avisar quando terminar de carregar", "Para tirar do cabo e poupar a bateria", () => app.AvisarCheio, v => { app.AvisarCheio = v; app.SalvarConfig(); });
 
