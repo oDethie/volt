@@ -884,6 +884,8 @@ class Configuracoes : Form
 
             Cab("Sistema");
             Chave("Iniciar com o Windows", "Abre o Volt sozinho quando você entra no Windows", () => app.IniciaComWindows(), v => app.AlternarInicio());
+            Botao("Desinstalar o Volt", "Remove o programa, o atalho, as configurações e o histórico (pede confirmação)", () => "",
+                r => { try { System.Diagnostics.Process.Start(Application.ExecutablePath, "--desinstalar"); } catch { } });
 
             Cab("Atualizações");
             Chave("Atualizar sozinho", "A cada 12 horas confere no GitHub se há versão nova. Se houver, baixa, confere a assinatura digital e se atualiza quando você não estiver jogando em tela cheia",

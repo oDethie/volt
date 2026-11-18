@@ -53,6 +53,13 @@ static class Program
             return;
         }
         if (args.Length >= 1 && args[0] == "--atualizado") Atualizado = true;
+        if (args.Length == 1 && args[0] == "--desinstalar") { Application.EnableVisualStyles(); Instalador.Desinstalar(TemaEscuroSistema()); return; }
+        // aberto de fora da pasta de programas (ex.: Downloads): oferece instalar
+        if (args.Length == 0 && !Instalador.EstaInstalado)
+        {
+            Application.EnableVisualStyles();
+            if (!Instalador.Oferecer(TemaEscuroSistema())) return;
+        }
 
         MsgAbrir = RegisterWindowMessage("Volt_AbrirPainel");
         bool novo;
@@ -75,6 +82,17 @@ static class Program
             Application.ThreadException += (s, e) => Registro.Erro(e.Exception);
             Application.Run(new App());
         }
+    }
+
+    static bool TemaEscuroSistema()
+    {
+        try
+        {
+            using (var k = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"))
+            { object v = k == null ? null : k.GetValue("AppsUseLightTheme"); if (v is int) return (int)v == 0; }
+        }
+        catch { }
+        return false;
     }
 
     static void Listar(string arq)
@@ -493,7 +511,8 @@ class Mensageiro : NativeWindow
 {
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern uint RegisterWindowMessage(string s);
     readonly uint msgBarra = RegisterWindowMessage("TaskbarCreated");
-    public Action Mudou, Acordou, BarraRecriada, Abrir, Tema;
+    readonly uint msgSair = RegisterWindowMessage("Volt_Sair");
+    public Action Mudou, Acordou, BarraRecriada, Abrir, Tema, Sair;
 
     public Mensageiro() { CreateHandle(new CreateParams { Caption = "Volt" }); }
 
@@ -503,6 +522,7 @@ class Mensageiro : NativeWindow
         else if (m.Msg == 0x0218 /*WM_POWERBROADCAST*/ && m.WParam.ToInt32() == 0x12 /*RESUMEAUTOMATIC*/) { if (Acordou != null) Acordou(); }
         else if (m.Msg == msgBarra) { if (BarraRecriada != null) BarraRecriada(); }
         else if (m.Msg == Program.MsgAbrir) { if (Abrir != null) Abrir(); }
+        else if (m.Msg == msgSair) { if (Sair != null) Sair(); }
         else if (m.Msg == 0x001A /*WM_SETTINGCHANGE*/) { if (Tema != null) Tema(); }
         base.WndProc(ref m);
     }
@@ -583,6 +603,7 @@ class App : ApplicationContext
         msg.Acordou = () => LerEm(6000);
         msg.BarraRecriada = () => { icone.Visible = false; icone.Visible = true; foreach (var ni in numeros.Values) { ni.Visible = false; ni.Visible = true; } faixa.Recriar(); };
         msg.Abrir = () => { if (!painel.Visible) painel.Mostrar(); };
+        msg.Sair = () => Sair();
         msg.Tema = () => { chaveIcone = null; Postar(AtualizarIcones); };
 
         // Identidade nova para o icone (o Windows lembra se cada icone fica na barra ou no ^ pela identidade;
@@ -614,6 +635,8 @@ class App : ApplicationContext
         tIni.Start();
         new Thread(() => { if (primeiraVez) { if (CriarTarefa()) inicioCache = true; } else ConferirInicio(); }) { IsBackground = true, Priority = ThreadPriority.Lowest }.Start();
         if (primeiraVez) SalvarConfig();
+        // instalado na pasta de programas: aparece em Configuracoes > Aplicativos e no menu Iniciar
+        if (Instalador.EstaInstalado) new Thread(Instalador.GarantirRegistro) { IsBackground = true, Priority = ThreadPriority.Lowest }.Start();
     }
 
     void Postar(Action a) { try { if (invocador.IsHandleCreated) invocador.BeginInvoke(a); } catch { } }
