@@ -265,7 +265,8 @@ class Painel : Form
     int Cartao(Graphics g, Estado a, int y, int pad, int W)
     {
         float f = Abertura(a.Chave);
-        int hBase = E(76), hGraf = (int)Math.Round(E(144) * f);
+        int extra = a.Partes != null ? E(36) : 0;      // fones: linha com esquerdo, direito e estojo
+        int hBase = E(76) + extra, hGraf = (int)Math.Round(E(144) * f);
         var r = new Rectangle(pad, y, W - pad * 2, hBase + hGraf);
         zonas.Add(new Zona { R = r, Tipo = Z_CARTAO, A = a });
         if (g != null)
@@ -294,7 +295,9 @@ class Painel : Form
             Fundo(g, rb, cTrilho, E(3));
             if (a.Pct > 0) Fundo(g, new Rectangle(rb.X, rb.Y, Math.Max(E(6), rb.Width * a.Pct / 100), rb.Height), apagado ? cFraco : cor, E(3));
             // linha 3: origem e previsao
-            var r3 = new Rectangle(xi, r.Y + E(50), r.Width - E(28), E(18));
+            if (a.Partes != null)
+                Volt.Partes(g, new Rectangle(xi, r.Y + E(54), r.Width - E(28), E(28)), a.Partes, fPequena, ct, cFraco, cTrilho, escuro, lim, esc);
+            var r3 = new Rectangle(xi, r.Y + E(50) + extra, r.Width - E(28), E(18));
             string prev = Previsao(a);
             int pvw = prev.Length == 0 ? 0 : TextRenderer.MeasureText(g, prev, fPequena, Size.Empty, TextFormatFlags.NoPadding).Width + E(2);
             if (pvw > 0) TextRenderer.DrawText(g, prev, fPequena, new Rectangle(r3.Right - pvw, r3.Y, pvw, r3.Height), cFraco, TD);

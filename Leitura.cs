@@ -20,6 +20,7 @@ class Aparelho
     public bool Carregando;
     public string Detalhe;      // ex.: "E 80% · D 75% · estojo 40%"
     public bool Aproximado;     // o aparelho so informa niveis (baixo, medio, cheio)
+    public int[] Partes;        // fones: esquerdo, direito, estojo (-1 = sem informacao)
 }
 
 static class Leitor
@@ -648,11 +649,7 @@ static class GalaxyBuds
                 !Status(b.Endereco, sppAntigo, true, ref e, ref d, ref c)) continue;
             int pct = e >= 0 && d >= 0 ? Math.Min(e, d) : Math.Max(e, d);
             if (pct < 0) continue;
-            var det = new List<string>();
-            if (e >= 0) det.Add("E " + e + "%");
-            if (d >= 0) det.Add("D " + d + "%");
-            if (c >= 0) det.Add("estojo " + c + "%");
-            saida.Add(new Aparelho { Chave = "bt:" + b.Conteiner, Nome = b.Nome, Via = "Bluetooth", Tipo = Tipo.Fone, Pct = pct, Detalhe = string.Join(" · ", det) });
+            saida.Add(new Aparelho { Chave = "bt:" + b.Conteiner, Nome = b.Nome, Via = "Bluetooth", Tipo = Tipo.Fone, Pct = pct, Partes = new[] { e, d, c } });
         }
     }
 

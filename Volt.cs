@@ -16,8 +16,8 @@ using Timer = System.Windows.Forms.Timer;
 [assembly: AssemblyTitle("Volt")]
 [assembly: AssemblyProduct("Volt")]
 [assembly: AssemblyDescription("Bateria dos aparelhos sem fio na bandeja do Windows")]
-[assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.0")]
+[assembly: AssemblyVersion("1.0.1.0")]
+[assembly: AssemblyFileVersion("1.0.1.0")]
 
 static class Program
 {
@@ -47,9 +47,9 @@ static class Program
         if (args.Length == 2 && args[0] == "--testedica")
         {
             float e = 1.75f;
-            var ap = new Estado { Tipo = Tipo.Mouse, Pct = 52, Via = "Receptor 2.4 GHz", Visto = DateTime.Now.AddMinutes(-1) };
-            using (var b = new Bitmap((int)(240 * e), (int)(118 * e)))
-            using (var g = Graphics.FromImage(b)) { Dica.Desenhar(g, b.Size, ap, "PRO X 2", 20, "dura ~3 dias", true, e); b.Save(args[1]); }
+            var ap = new Estado { Tipo = Tipo.Fone, Pct = 100, Via = "Bluetooth", Visto = DateTime.Now.AddMinutes(-1), Partes = new[] { 100, 96, 18 } };
+            using (var b = new Bitmap((int)(290 * e), (int)(156 * e)))
+            using (var g = Graphics.FromImage(b)) { Dica.Desenhar(g, b.Size, ap, "Buds FE de Thiago", 20, "dura ~5 h", true, e); b.Save(args[1]); }
             return;
         }
         if (args.Length >= 1 && args[0] == "--atualizado") Atualizado = true;
@@ -173,7 +173,8 @@ class Estado
     public int Limite = -1;                        // -1 = limite padrao
     public DateTime Visto;
     public bool AvisouFraca, AvisouCritica, AvisouCheio, AvisouPrevisao;
-    public string Detalhe;                         // ex.: "E 80% · D 75% · estojo 40%"
+    public string Detalhe;
+    public int[] Partes;                           // fones: esquerdo, direito, estojo (-1 = sem informacao)
     public int Prazo = 0;                          // segundos para manter o ultimo valor se sumir (receptor: aparelho dormindo)
 }
 
@@ -188,6 +189,39 @@ static class Volt
             case Tipo.Teclado: return '';
             case Tipo.Controle: return '';
             default: return '';
+        }
+    }
+
+    // fones: tres mini barras lado a lado (Esquerdo, Direito, Estojo), no estilo da barra principal
+    public static void Partes(Graphics g, Rectangle r, int[] p, Font f, Color texto, Color fraco, Color trilho, bool escuro, int limite, float esc)
+    {
+        string[] nomes = { "Esquerdo", "Direito", "Estojo" };
+        int gap = (int)Math.Round(14 * esc), cw = (r.Width - 2 * gap) / 3, bh = Math.Max(2, (int)Math.Round(4 * esc));
+        var tf = System.Windows.Forms.TextFormatFlags.Left | System.Windows.Forms.TextFormatFlags.VerticalCenter | System.Windows.Forms.TextFormatFlags.NoPadding | System.Windows.Forms.TextFormatFlags.SingleLine;
+        var td = System.Windows.Forms.TextFormatFlags.Right | System.Windows.Forms.TextFormatFlags.VerticalCenter | System.Windows.Forms.TextFormatFlags.NoPadding | System.Windows.Forms.TextFormatFlags.SingleLine;
+        // pouco espaco: os tres com rotulo curto (nunca misturado)
+        bool curto = false;
+        for (int i = 0; i < 3; i++)
+        {
+            int v = i < p.Length ? p[i] : -1;
+            int w = System.Windows.Forms.TextRenderer.MeasureText(g, nomes[i], f, Size.Empty, System.Windows.Forms.TextFormatFlags.NoPadding).Width +
+                    System.Windows.Forms.TextRenderer.MeasureText(g, v < 0 ? "–" : v + "%", f, Size.Empty, System.Windows.Forms.TextFormatFlags.NoPadding).Width;
+            if (w + (int)Math.Round(8 * esc) > cw) curto = true;
+        }
+        for (int i = 0; i < 3; i++)
+        {
+            int v = i < p.Length ? p[i] : -1;
+            var rc = new Rectangle(r.X + i * (cw + gap), r.Y, cw, r.Height);
+            var rt = new Rectangle(rc.X, rc.Y, rc.Width, rc.Height - bh - (int)Math.Round(4 * esc));
+            Color cor = v >= 0 && v <= limite ? Vermelho(escuro) : v >= 0 && v <= Math.Max(limite + 15, 35) ? Amarelo(escuro) : Verde(escuro);
+            string nome = (curto ? new[] { "Esq.", "Dir.", "Estojo" } : nomes)[i];
+            System.Windows.Forms.TextRenderer.DrawText(g, nome, f, rt, fraco, tf);
+            System.Windows.Forms.TextRenderer.DrawText(g, v < 0 ? "–" : v + "%", f, rt, v >= 0 && v <= limite ? cor : texto, td);
+            var rb = new Rectangle(rc.X, rc.Bottom - bh, rc.Width, bh);
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            using (var pth = Desenho.Arred(rb, bh / 2f)) using (var b = new SolidBrush(trilho)) g.FillPath(b, pth);
+            if (v > 0) using (var pth = Desenho.Arred(new RectangleF(rb.X, rb.Y, Math.Max(bh, rb.Width * v / 100f), rb.Height), bh / 2f)) using (var b = new SolidBrush(cor)) g.FillPath(b, pth);
+            g.SmoothingMode = SmoothingMode.None;
         }
     }
 
@@ -681,6 +715,7 @@ class App : ApplicationContext
             if (!estavaCarregando && a.Carregando) Ciclos.Fechar(e);   // comecou a carregar: guarda como foi a descarga
             e.Carregando = a.Carregando;
             e.Detalhe = a.Detalhe;
+            e.Partes = a.Partes;
             e.Presente = true; e.Dormindo = false; e.Visto = DateTime.Now;
             e.Prazo = a.Via.StartsWith("Receptor") ? 30 * 60 : 0;
             vistos.Add(a.Chave);

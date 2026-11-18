@@ -62,7 +62,7 @@ class Dica : Form
         fPct = new Font("Segoe UI Semibold", E(22), GraphicsUnit.Pixel);
         fPeq = new Font("Segoe UI", E(12), GraphicsUnit.Pixel);
         fGlifo = new Font(Desenho.FonteIcones, E(16), GraphicsUnit.Pixel);
-        int w = E(240), h = E(118);
+        int w = E(a.Partes != null ? 290 : 240), h = E(a.Partes != null ? 156 : 118);
         int wn = TextRenderer.MeasureText(app.NomeDe(a), fNome).Width + E(60);
         if (wn > w) w = Math.Min(E(340), wn);
         var tela = Screen.FromPoint(new Point(r.X + r.Width / 2, r.Y)).Bounds;
@@ -115,8 +115,14 @@ class Dica : Form
             using (var p = Desenho.Arred(rb, E(2.5f))) using (var b = new SolidBrush(escuro ? Color.FromArgb(70, 70, 70) : Color.FromArgb(222, 222, 222))) g.FillPath(b, p);
             if (a.Pct > 0) using (var p = Desenho.Arred(new RectangleF(rb.X, rb.Y, Math.Max(E(5), rb.Width * a.Pct / 100f), rb.Height), E(2.5f))) using (var b = new SolidBrush(cor)) g.FillPath(b, p);
             g.SmoothingMode = SmoothingMode.None;
+            int yv = E(86);
+            if (a.Partes != null)
+            {
+                Volt.Partes(g, new Rectangle(x, E(88), W, E(28)), a.Partes, fPeq, cTexto, cFraco, escuro ? Color.FromArgb(70, 70, 70) : Color.FromArgb(222, 222, 222), escuro, limite, esc);
+                yv = E(124);
+            }
             string via = a.Via + (string.IsNullOrEmpty(a.Detalhe) ? "" : " · " + a.Detalhe) + (a.Aproximado ? " · aproximado" : "") + " · lido " + Volt.Ha(a.Visto);
-            TextRenderer.DrawText(g, via, fPeq, new Rectangle(x, E(86), W, E(20)), cFraco, TF);
+            TextRenderer.DrawText(g, via, fPeq, new Rectangle(x, yv, W, E(20)), cFraco, TF);
         }
     }
 }
