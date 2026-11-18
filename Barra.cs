@@ -71,16 +71,14 @@ class Barra
     // a barra foi recriada (Explorer reiniciou): comeca de novo
     public void Recriar() { var l = itens; Fechar(); if (l.Count > 0) Mostrar(l, claro); }
 
-    // desenha a faixa (tambem usado pela previa --testefaixa):
-    // icone do aparelho + numero pequeno com uma barrinha da bateria embaixo (cor do nivel)
+    // desenha a faixa (tambem usado pela previa --testefaixa): icone do aparelho + numero ao lado
     public static Bitmap Renderizar(List<Estado> itens, bool claro, float e, int h, Func<Estado, int> limiteDe)
     {
-        Color texto = claro ? Color.FromArgb(27, 27, 27) : Color.FromArgb(235, 235, 235);
-        // proporcional a altura da barra (48 px a 100%): no tamanho do texto do idioma/relogio
+        Color texto = claro ? Color.FromArgb(27, 27, 27) : Color.FromArgb(240, 240, 240);
+        // proporcional a altura da barra (48 px a 100%)
         e = h / 48f;
-        int pad = (int)Math.Round(4 * e), gap = (int)Math.Round(10 * e), gTam = (int)Math.Round(12 * e), gGap = (int)Math.Round(4 * e);
-        float bh = Math.Max(1.5f, 2f * e), minBarra = 18 * e;
-        using (var f = new Font("Segoe UI", 9f * e, GraphicsUnit.Pixel))
+        int pad = (int)Math.Round(4 * e), gap = (int)Math.Round(10 * e), gTam = (int)Math.Round(13 * e), gGap = (int)Math.Round(4 * e);
+        using (var f = new Font("Segoe UI", 10.5f * e, GraphicsUnit.Pixel))
         using (var medir = Graphics.FromHwnd(IntPtr.Zero))
         {
             medir.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
@@ -89,7 +87,7 @@ class Barra
             foreach (var a in itens)
             {
                 string t = a.Pct < 0 ? "?" : a.Pct + "%";
-                float tw = Math.Max(medir.MeasureString(t, f, PointF.Empty, StringFormat.GenericTypographic).Width, minBarra);
+                float tw = medir.MeasureString(t, f, PointF.Empty, StringFormat.GenericTypographic).Width + (a.Carregando ? 11 * e : 0);
                 larg.Add(tw);
                 w += gTam + gGap + tw + gap;
             }
@@ -105,16 +103,18 @@ class Barra
                 {
                     var a = itens[i];
                     int nivel = Volt.Nivel(a, limiteDe(a));
-                    Color cBarra = Volt.CorNivel(nivel, !claro);
-                    using (var gl = Desenho.Glifo(Volt.Glifo(a.Tipo), gTam, texto, 0.95f)) g.DrawImage(gl, (int)Math.Round(x), (h - gTam) / 2);
+                    Color c = nivel == 2 ? Volt.Vermelho(!claro) : texto;   // fraco: vermelho
+                    using (var gl = Desenho.Glifo(Volt.Glifo(a.Tipo), gTam, c, 0.95f)) g.DrawImage(gl, (int)Math.Round(x), (h - gTam) / 2);
                     x += gTam + gGap;
                     string t = a.Pct < 0 ? "?" : a.Pct + "%";
                     var sz = g.MeasureString(t, f, PointF.Empty, StringFormat.GenericTypographic);
-                    using (var b = new SolidBrush(texto)) g.DrawString(t, f, b, x, h / 2f - 2.5f * e - sz.Height / 2f, StringFormat.GenericTypographic);
-                    float by = h / 2f + 4.5f * e, bw = larg[i];
-                    using (var b = new SolidBrush(Color.FromArgb(60, texto))) g.FillRectangle(b, x, by, bw, bh);
-                    if (a.Pct > 0) using (var b = new SolidBrush(cBarra)) g.FillRectangle(b, x, by, Math.Max(bh, bw * a.Pct / 100f), bh);
-                    x += bw + gap;
+                    using (var b = new SolidBrush(c)) g.DrawString(t, f, b, x, (h - sz.Height) / 2f, StringFormat.GenericTypographic);
+                    if (a.Carregando)
+                    {
+                        int bt = (int)Math.Round(10 * e);
+                        using (var gl = Desenho.Glifo('\uE945', bt, Volt.Azul(!claro), 1f)) g.DrawImage(gl, (int)(x + sz.Width + 1 * e), (h - bt) / 2);
+                    }
+                    x += larg[i] + gap;
                 }
             }
             return bmp;
