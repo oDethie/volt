@@ -846,9 +846,8 @@ class Configuracoes : Form
         if (pagina == 0)
         {
             Cab("Barra de tarefas");
-            Nota("Ao lado do relógio aparece o ícone do aparelho e a bateria (ex.: mouse 52%). Escolha em Aparelhos quais ficam sempre ali.");
+            Nota("Ao lado do relógio aparece o ícone do aparelho e a bateria. Escolha em Aparelhos quais ficam sempre ali. O Volt em si fica guardado no ^.");
             Chave("Mostrar quando a bateria estiver acabando", "O aparelho aparece sozinho na barra ao chegar no limite de aviso, e some depois de carregar", () => app.MostrarFracos, v => app.DefinirFracos(v));
-            Chave("Ícone do Volt sempre visível", "Deixa o ícone do Volt ao lado do relógio. Desligado, ele fica guardado no ^", () => app.FixarBandeja, v => app.AplicarFixar(v));
 
             Cab("Leitura");
             Botao("Ler a bateria a cada", "Com que frequência o Volt pergunta a bateria aos aparelhos. Ao abrir o painel ele também lê na hora",

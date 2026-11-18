@@ -437,7 +437,7 @@ class App : ApplicationContext
     [StructLayout(LayoutKind.Sequential)] struct APPBARDATA { public int cbSize; public IntPtr hWnd; public uint uCallbackMessage; public uint uEdge; public RECT rc; public IntPtr lParam; }
 
     // ---- configuracao ----
-    public bool MostrarFracos = true, FixarBandeja, Animacoes = true, MenuLateralAberto = true, AtualizarSozinho = true;
+    public bool MostrarFracos = true, Animacoes = true, MenuLateralAberto = true, AtualizarSozinho = true;
     public bool AvisarFraca = true, AvisarCheio = true;
     public int LimitePadrao = 20, Intervalo = 2;
     string tema = "auto";
@@ -476,7 +476,6 @@ class App : ApplicationContext
     {
         bool primeiraVez = !File.Exists(arqConfig);
         LerConfig();
-        if (!primeiraVez && cfgVersao != "2") FixarBandeja = false;
         Historico.Carregar();
         invocador.CreateControl();
         var h = invocador.Handle;
@@ -490,6 +489,10 @@ class App : ApplicationContext
         msg.Abrir = () => { if (!painel.Visible) painel.Mostrar(); };
         msg.Tema = () => { chaveIcone = null; Postar(AtualizarIcones); };
 
+        // Identidade nova para o icone (o Windows lembra se cada icone fica na barra ou no ^ pela identidade;
+        // a da primeira versao tinha ficado fixada na barra). Os registros antigos do Volt sao apagados.
+        LimparRegistrosAntigos();
+        for (int i = 0; i < 20; i++) new NotifyIcon().Dispose();
         icone = new NotifyIcon { Visible = false, Text = "Volt" };
         icone.MouseUp += (s, e) => { if (e.Button == MouseButtons.Left) painel.Alternar(); };
         icone.ContextMenuStrip = menu;
@@ -499,8 +502,6 @@ class App : ApplicationContext
         tDebounce.Tick += (s, e) => { tDebounce.Stop(); pedido.Set(); };
         tFila.Tick += (s, e) => MostrarFila();
         AtualizarIcones();
-        // o Windows so le "guardado no ^" quando o icone entra na bandeja: marca antes de mostrar
-        FixarIcone(FixarBandeja);
         icone.Visible = true;
 
         // leitura em segundo plano: parada entre uma leitura e outra (sem gastar CPU)
@@ -513,7 +514,7 @@ class App : ApplicationContext
         if (Program.Atualizado) { var t = new Timer { Interval = 3000 }; t.Tick += (s, e) => { t.Stop(); t.Dispose(); Avisar('', "Volt atualizado para " + Atualizador.Atual.ToString(3)); }; t.Start(); }
 
         var tIni = new Timer { Interval = 2500 };
-        tIni.Tick += (s, e) => { tIni.Stop(); tIni.Dispose(); FixarIcone(FixarBandeja); Aparar(); };
+        tIni.Tick += (s, e) => { tIni.Stop(); tIni.Dispose(); GuardarNoTriangulo(); Aparar(); };
         tIni.Start();
         new Thread(() => { if (primeiraVez) { if (CriarTarefa()) inicioCache = true; } else ConferirInicio(); }) { IsBackground = true, Priority = ThreadPriority.Lowest }.Start();
         if (primeiraVez) SalvarConfig();
@@ -791,35 +792,55 @@ class App : ApplicationContext
 
     public void DefinirIntervalo(int v) { Intervalo = v; SalvarConfig(); pedido.Set(); }
 
-    public static void FixarIcone(bool sim)
+    // O icone do Volt fica sempre guardado no ^ (so a faixa dos aparelhos vai para a barra)
+    static string ExeVolt { get { return "\\" + Path.GetFileName(Application.ExecutablePath); } }
+
+    void LimparRegistrosAntigos()
     {
+        if (cfgVersao == "3") return;
         try
         {
             using (var k = Registry.CurrentUser.OpenSubKey(@"Control Panel\NotifyIconSettings", true))
             {
                 if (k == null) return;
-                string exe = "\\" + Path.GetFileName(Application.ExecutablePath);
+                foreach (var n in k.GetSubKeyNames())
+                {
+                    string p;
+                    using (var s = k.OpenSubKey(n)) p = s == null ? null : s.GetValue("ExecutablePath") as string;
+                    if (p != null && p.EndsWith(ExeVolt, StringComparison.OrdinalIgnoreCase)) k.DeleteSubKeyTree(n, false);
+                }
+            }
+        }
+        catch { }
+        cfgVersao = "3";
+        SalvarConfig();
+    }
+
+    // se o Windows mesmo assim colocou o icone na barra, marca como guardado e poe o icone de novo
+    void GuardarNoTriangulo()
+    {
+        bool mudou = false;
+        try
+        {
+            using (var k = Registry.CurrentUser.OpenSubKey(@"Control Panel\NotifyIconSettings", true))
+            {
+                if (k == null) return;
                 foreach (var n in k.GetSubKeyNames())
                     using (var s = k.OpenSubKey(n, true))
                     {
                         var p = s == null ? null : s.GetValue("ExecutablePath") as string;
-                        if (p != null && p.EndsWith(exe, StringComparison.OrdinalIgnoreCase)) s.SetValue("IsPromoted", sim ? 1 : 0, RegistryValueKind.DWord);
+                        if (p == null || !p.EndsWith(ExeVolt, StringComparison.OrdinalIgnoreCase)) continue;
+                        object v = s.GetValue("IsPromoted");
+                        if (!(v is int) || (int)v != 0) { s.SetValue("IsPromoted", 0, RegistryValueKind.DWord); mudou = true; }
                     }
             }
         }
         catch { }
-    }
-
-    public void AplicarFixar(bool sim)
-    {
-        FixarBandeja = sim;
-        FixarIcone(sim);
+        if (!mudou) return;
         icone.Visible = false;
-        foreach (var ni in numeros.Values) ni.Visible = false;
         var t = new Timer { Interval = 1500 };
-        t.Tick += (s, e) => { t.Stop(); t.Dispose(); icone.Visible = true; foreach (var ni in numeros.Values) ni.Visible = true; if (!sim) FixarIcone(false); };
+        t.Tick += (s, e) => { t.Stop(); t.Dispose(); icone.Visible = true; };
         t.Start();
-        SalvarConfig();
     }
 
     // ---------------- menu do icone ----------------
@@ -1030,7 +1051,6 @@ class App : ApplicationContext
                 {
                     case "barra_fracos": MostrarFracos = v == "1"; break;
                     case "cfg": cfgVersao = v; break;
-                    case "fixar": FixarBandeja = v == "1"; break;
                     case "animacoes": Animacoes = v == "1"; break;
                     case "menu_lateral": MenuLateralAberto = v == "1"; break;
                     case "atualizar": AtualizarSozinho = v == "1"; break;
@@ -1065,7 +1085,7 @@ class App : ApplicationContext
         try
         {
             var l = new List<string> {
-                "cfg=2", "barra_fracos=" + (MostrarFracos ? 1 : 0), "fixar=" + (FixarBandeja ? 1 : 0), "animacoes=" + (Animacoes ? 1 : 0),
+                "cfg=" + (cfgVersao == "3" ? "3" : "2"), "barra_fracos=" + (MostrarFracos ? 1 : 0), "animacoes=" + (Animacoes ? 1 : 0),
                 "menu_lateral=" + (MenuLateralAberto ? 1 : 0), "atualizar=" + (AtualizarSozinho ? 1 : 0),
                 "avisar_fraca=" + (AvisarFraca ? 1 : 0), "avisar_cheio=" + (AvisarCheio ? 1 : 0),
                 "limite=" + LimitePadrao, "intervalo=" + Intervalo, "tema=" + tema };

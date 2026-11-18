@@ -76,9 +76,11 @@ class Barra
     public static Bitmap Renderizar(List<Estado> itens, bool claro, float e, int h, Func<Estado, int> limiteDe)
     {
         Color texto = claro ? Color.FromArgb(27, 27, 27) : Color.FromArgb(235, 235, 235);
-        int pad = (int)Math.Round(6 * e), gap = (int)Math.Round(12 * e), gTam = (int)Math.Round(14 * e), gGap = (int)Math.Round(5 * e);
-        float bh = Math.Max(2f, 2.5f * e), minBarra = 22 * e;
-        using (var f = new Font("Segoe UI", 10.5f * e, GraphicsUnit.Pixel))
+        // proporcional a altura da barra (48 px a 100%): no tamanho do texto do idioma/relogio
+        e = h / 48f;
+        int pad = (int)Math.Round(4 * e), gap = (int)Math.Round(10 * e), gTam = (int)Math.Round(12 * e), gGap = (int)Math.Round(4 * e);
+        float bh = Math.Max(1.5f, 2f * e), minBarra = 18 * e;
+        using (var f = new Font("Segoe UI", 9f * e, GraphicsUnit.Pixel))
         using (var medir = Graphics.FromHwnd(IntPtr.Zero))
         {
             medir.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
@@ -108,8 +110,8 @@ class Barra
                     x += gTam + gGap;
                     string t = a.Pct < 0 ? "?" : a.Pct + "%";
                     var sz = g.MeasureString(t, f, PointF.Empty, StringFormat.GenericTypographic);
-                    using (var b = new SolidBrush(texto)) g.DrawString(t, f, b, x, h / 2f - 3 * e - sz.Height / 2f, StringFormat.GenericTypographic);
-                    float by = h / 2f + 6 * e, bw = larg[i];
+                    using (var b = new SolidBrush(texto)) g.DrawString(t, f, b, x, h / 2f - 2.5f * e - sz.Height / 2f, StringFormat.GenericTypographic);
+                    float by = h / 2f + 4.5f * e, bw = larg[i];
                     using (var b = new SolidBrush(Color.FromArgb(60, texto))) g.FillRectangle(b, x, by, bw, bh);
                     if (a.Pct > 0) using (var b = new SolidBrush(cBarra)) g.FillRectangle(b, x, by, Math.Max(bh, bw * a.Pct / 100f), bh);
                     x += bw + gap;
