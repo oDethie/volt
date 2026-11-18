@@ -435,6 +435,9 @@ class Painel : Form
             lim.DropDownItems.Add(it);
         }
         m.Items.Add(lim);
+        var nb = new ToolStripMenuItem("Sempre mostrar na barra de tarefas") { Checked = a.NaBarra };
+        nb.Click += (s, e) => app.FixarNaBarra(a, !a.NaBarra);
+        m.Items.Add(nb);
         var oc = new ToolStripMenuItem("Esconder do painel");
         oc.Click += (s, e) => { a.Oculto = true; app.SalvarConfig(); app.Mudou(); };
         m.Items.Add(oc);

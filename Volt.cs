@@ -42,6 +42,7 @@ static class Program
         if (args.Length == 2 && args[0] == "--assinar") { File.WriteAllText(args[1] + ".pub.txt", Atualizador.Assinar(args[1])); return; }
         if (args.Length == 2 && args[0] == "--testeatualizar") { File.WriteAllLines(args[1], Atualizador.Teste()); return; }
         if (args.Length == 2 && args[0] == "--icones") { Volt.TesteIcones(args[1]); return; }
+        if (args.Length == 2 && args[0] == "--testefaixa") { TesteFaixa(args[1]); return; }
         if (args.Length >= 1 && args[0] == "--atualizado") Atualizado = true;
 
         MsgAbrir = RegisterWindowMessage("Volt_AbrirPainel");
@@ -90,6 +91,26 @@ static class Program
         File.WriteAllLines(arq, l);
     }
 
+    // previa da faixa da barra (fundo escuro e claro, 175%)
+    static void TesteFaixa(string arq)
+    {
+        var l = new List<Estado> {
+            new Estado { Tipo = Tipo.Mouse, Pct = 52 },
+            new Estado { Tipo = Tipo.Fone, Pct = 12 },
+            new Estado { Tipo = Tipo.Controle, Pct = 80, Carregando = true } };
+        float e = 1.75f; int h = 84;
+        using (var esc = Barra.Renderizar(l, false, e, h, x => 20))
+        using (var cla = Barra.Renderizar(l, true, e, h, x => 20))
+        using (var b = new Bitmap(Math.Max(esc.Width, cla.Width) + 40, h * 2))
+        using (var g = Graphics.FromImage(b))
+        {
+            g.FillRectangle(new SolidBrush(Color.FromArgb(28, 28, 28)), 0, 0, b.Width, h);
+            g.FillRectangle(new SolidBrush(Color.FromArgb(238, 238, 238)), 0, h, b.Width, h);
+            g.DrawImage(esc, 20, 0); g.DrawImage(cla, 20, h);
+            b.Save(arq);
+        }
+    }
+
     static void SalvarIco(string caminho)
     {
         int[] tams = { 16, 20, 24, 32, 48, 64, 256 };
@@ -121,6 +142,7 @@ class Estado
     public Tipo Tipo;
     public int Pct = -1;
     public bool Carregando, Aproximado, Presente, Dormindo, Oculto;
+    public bool NaBarra;                           // sempre mostrar na barra de tarefas
     public int Limite = -1;                        // -1 = limite padrao
     public DateTime Visto;
     public bool AvisouFraca, AvisouCritica, AvisouCheio;
@@ -404,6 +426,7 @@ class App : ApplicationContext
     [DllImport("user32.dll")] static extern uint GetDpiForWindow(IntPtr h);
     [DllImport("user32.dll")] static extern int GetSystemMetricsForDpi(int i, uint dpi);
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RECT r);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr h, System.Text.StringBuilder s, int n);
     [DllImport("user32.dll")] static extern bool IsZoomed(IntPtr h);
@@ -414,10 +437,11 @@ class App : ApplicationContext
     [StructLayout(LayoutKind.Sequential)] struct APPBARDATA { public int cbSize; public IntPtr hWnd; public uint uCallbackMessage; public uint uEdge; public RECT rc; public IntPtr lParam; }
 
     // ---- configuracao ----
-    public bool NumerosBarra, FixarBandeja = true, Animacoes = true, MenuLateralAberto = true, AtualizarSozinho = true;
+    public bool MostrarFracos = true, FixarBandeja, Animacoes = true, MenuLateralAberto = true, AtualizarSozinho = true;
     public bool AvisarFraca = true, AvisarCheio = true;
     public int LimitePadrao = 20, Intervalo = 2;
     string tema = "auto";
+    string cfgVersao = "";
     readonly string arqConfig = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Volt.ini");
     readonly Dictionary<string, Estado> aparelhos = new Dictionary<string, Estado>();
 
@@ -426,6 +450,7 @@ class App : ApplicationContext
     readonly Dictionary<string, NotifyIcon> numeros = new Dictionary<string, NotifyIcon>();
     readonly Mensageiro msg;
     readonly Painel painel;
+    Barra faixa;
     readonly Aviso aviso = new Aviso();
     readonly ContextMenuStrip menu = new ContextMenuStrip { ShowImageMargin = false, ShowCheckMargin = true };
     readonly Control invocador = new Control();
@@ -451,15 +476,17 @@ class App : ApplicationContext
     {
         bool primeiraVez = !File.Exists(arqConfig);
         LerConfig();
+        if (!primeiraVez && cfgVersao != "2") FixarBandeja = false;
         Historico.Carregar();
         invocador.CreateControl();
         var h = invocador.Handle;
 
         painel = new Painel(this);
+        faixa = new Barra(this);
         msg = new Mensageiro();
         msg.Mudou = () => LerEm(3000);
         msg.Acordou = () => LerEm(6000);
-        msg.BarraRecriada = () => { icone.Visible = false; icone.Visible = true; foreach (var ni in numeros.Values) { ni.Visible = false; ni.Visible = true; } };
+        msg.BarraRecriada = () => { icone.Visible = false; icone.Visible = true; foreach (var ni in numeros.Values) { ni.Visible = false; ni.Visible = true; } faixa.Recriar(); };
         msg.Abrir = () => { if (!painel.Visible) painel.Mostrar(); };
         msg.Tema = () => { chaveIcone = null; Postar(AtualizarIcones); };
 
@@ -674,25 +701,26 @@ class App : ApplicationContext
         return false;
     }
 
+    // aparelhos que aparecem na barra: os que voce fixou e os que estao com a bateria acabando
+    public List<Estado> NaBarraAgora()
+    {
+        var l = new List<Estado>();
+        foreach (var a in ListaAparelhos(false))
+            if (a.NaBarra || (MostrarFracos && !a.Carregando && a.Pct >= 0 && a.Pct <= LimiteDe(a))) l.Add(a);
+        return l;
+    }
+
     public void AtualizarIcones()
     {
         var lista = ListaAparelhos(false);
-        Estado pior = null;
-        foreach (var a in lista) if (a.Pct >= 0 && !a.Carregando && (pior == null || a.Pct < pior.Pct)) pior = a;
-        if (pior == null) foreach (var a in lista) if (a.Pct >= 0 && (pior == null || a.Pct < pior.Pct)) pior = a;
+        // icone do Volt (fica no ^, so para abrir o painel)
         int n = TamIcone();
-        bool claro = BarraClara();
-        Color texto = claro ? Color.FromArgb(28, 28, 28) : Color.White;
-        Color trilho = claro ? Color.FromArgb(60, 0, 0, 0) : Color.FromArgb(75, 255, 255, 255);
-        int pct = pior == null ? -1 : pior.Pct;
-        int nivel = pior == null ? 0 : Volt.Nivel(pior, LimiteDe(pior));
-        string chave = n + "|" + claro + "|" + pct + "|" + nivel;
+        string chave = n.ToString();
         if (chave != chaveIcone)
         {
             chaveIcone = chave;
-            using (var b = Volt.IconeAnel(n, pct, Volt.CorNivel(nivel, !claro), trilho, texto)) TrocarIcone(icone, b);
+            using (var b = Desenho.Logo(n)) TrocarIcone(icone, b);
         }
-        // dica (o Windows corta em 63 letras)
         string dica = "Volt";
         if (lista.Count == 0) dica = "Volt · nenhum aparelho com bateria";
         else
@@ -703,12 +731,16 @@ class App : ApplicationContext
         }
         icone.Text = dica.Length > 63 ? dica.Substring(0, 62) + "…" : dica;
 
-        // modo numeros: um icone por aparelho
+        // faixa na barra de tarefas; se a barra nao permitir (vertical), um icone com numero por aparelho
+        bool claro = BarraClara();
+        var mostrar = NaBarraAgora();
+        bool coube = faixa.Mostrar(mostrar, claro);
         var querem = new HashSet<string>();
-        if (NumerosBarra) foreach (var a in lista) querem.Add(a.Chave);
+        if (!coube) foreach (var a in mostrar) querem.Add(a.Chave);
         foreach (var k in new List<string>(numeros.Keys))
             if (!querem.Contains(k)) { numeros[k].Visible = false; numeros[k].Dispose(); numeros.Remove(k); }
-        foreach (var a in lista)
+        Color texto = claro ? Color.FromArgb(28, 28, 28) : Color.White;
+        foreach (var a in mostrar)
         {
             if (!querem.Contains(a.Chave)) continue;
             NotifyIcon ni;
@@ -724,9 +756,26 @@ class App : ApplicationContext
             using (var b = Volt.IconeNumero(n, a.Pct, Volt.CorNivel(nv, !claro), texto, a.Carregando)) TrocarIcone(ni, b);
             string d = NomeDe(a) + ": " + (a.Pct < 0 ? "?" : a.Pct + "%") + (a.Carregando ? " (carregando)" : "");
             ni.Text = d.Length > 63 ? d.Substring(0, 63) : d;
-            if (novo) { ni.Visible = true; if (FixarBandeja) { var t = new Timer { Interval = 1500 }; t.Tick += (s, e) => { t.Stop(); t.Dispose(); FixarIcone(true); }; t.Start(); } }
+            if (novo) ni.Visible = true;
         }
     }
+
+    public void AbrirPainel() { Postar(() => painel.Alternar()); }
+
+    // menu do icone aberto a partir da faixa da barra
+    public void MenuEm(Point p)
+    {
+        Postar(() =>
+        {
+            MenuAberto = true;
+            MontarMenu();
+            SetForegroundWindow(invocador.Handle);
+            menu.Show(p, ToolStripDropDownDirection.AboveLeft);
+        });
+    }
+
+    public void FixarNaBarra(Estado a, bool v) { a.NaBarra = v; SalvarConfig(); Mudou(); }
+    public void DefinirFracos(bool v) { MostrarFracos = v; SalvarConfig(); AtualizarIcones(); }
 
     static string Curto(string n) { return n.Length > 18 ? n.Substring(0, 17) + "…" : n; }
 
@@ -737,7 +786,6 @@ class App : ApplicationContext
         if (antigo != null) antigo.Dispose();
     }
 
-    public void DefinirNumeros(bool v) { NumerosBarra = v; SalvarConfig(); AtualizarIcones(); }
     public void DefinirIntervalo(int v) { Intervalo = v; SalvarConfig(); pedido.Set(); }
 
     public static void FixarIcone(bool sim)
@@ -766,7 +814,7 @@ class App : ApplicationContext
         icone.Visible = false;
         foreach (var ni in numeros.Values) ni.Visible = false;
         var t = new Timer { Interval = 1500 };
-        t.Tick += (s, e) => { t.Stop(); t.Dispose(); icone.Visible = true; foreach (var ni in numeros.Values) ni.Visible = true; };
+        t.Tick += (s, e) => { t.Stop(); t.Dispose(); icone.Visible = true; foreach (var ni in numeros.Values) ni.Visible = true; if (!sim) FixarIcone(false); };
         t.Start();
         SalvarConfig();
     }
@@ -787,9 +835,6 @@ class App : ApplicationContext
         var ler = new ToolStripMenuItem("Ler a bateria agora");
         ler.Click += (s, e) => LerAgora();
         menu.Items.Add(ler);
-        var num = new ToolStripMenuItem("Mostrar a % de cada aparelho") { Checked = NumerosBarra };
-        num.Click += (s, e) => DefinirNumeros(!NumerosBarra);
-        menu.Items.Add(num);
         menu.Items.Add(new ToolStripSeparator());
         if (TemNovaVersao)
         {
@@ -828,6 +873,7 @@ class App : ApplicationContext
 
     void Sair()
     {
+        faixa.Fechar();
         saindo = true; pedido.Set();
         SalvarConfig();
         icone.Visible = false;
@@ -979,7 +1025,8 @@ class App : ApplicationContext
                 int n;
                 switch (k)
                 {
-                    case "numeros": NumerosBarra = v == "1"; break;
+                    case "barra_fracos": MostrarFracos = v == "1"; break;
+                    case "cfg": cfgVersao = v; break;
                     case "fixar": FixarBandeja = v == "1"; break;
                     case "animacoes": Animacoes = v == "1"; break;
                     case "menu_lateral": MenuLateralAberto = v == "1"; break;
@@ -994,11 +1041,13 @@ class App : ApplicationContext
                             // chave|nome original|nome|tipo|via|limite|oculto|ultimo %|visto
                             var c = v.Split('|');
                             if (c.Length < 9) break;
+                            bool naBarra = c.Length > 9 && c[9] == "1";
                             var e = new Estado { Chave = c[0], NomeOrig = c[1], Nome = c[2].Length == 0 ? null : c[2], Via = c[4], Oculto = c[6] == "1" };
                             Tipo t; if (Enum.TryParse(c[3], out t)) e.Tipo = t;
                             if (int.TryParse(c[5], out n)) e.Limite = n;
                             if (int.TryParse(c[7], out n)) e.Pct = n;
                             long tk; if (long.TryParse(c[8], out tk)) e.Visto = new DateTime(tk);
+                            e.NaBarra = naBarra;
                             aparelhos[e.Chave] = e;
                         }
                         break;
@@ -1013,13 +1062,13 @@ class App : ApplicationContext
         try
         {
             var l = new List<string> {
-                "numeros=" + (NumerosBarra ? 1 : 0), "fixar=" + (FixarBandeja ? 1 : 0), "animacoes=" + (Animacoes ? 1 : 0),
+                "cfg=2", "barra_fracos=" + (MostrarFracos ? 1 : 0), "fixar=" + (FixarBandeja ? 1 : 0), "animacoes=" + (Animacoes ? 1 : 0),
                 "menu_lateral=" + (MenuLateralAberto ? 1 : 0), "atualizar=" + (AtualizarSozinho ? 1 : 0),
                 "avisar_fraca=" + (AvisarFraca ? 1 : 0), "avisar_cheio=" + (AvisarCheio ? 1 : 0),
                 "limite=" + LimitePadrao, "intervalo=" + Intervalo, "tema=" + tema };
             foreach (var a in aparelhos.Values)
                 l.Add("aparelho=" + string.Join("|", new[] { a.Chave, Limpo(a.NomeOrig), Limpo(a.Nome), a.Tipo.ToString(), Limpo(a.Via),
-                    a.Limite.ToString(), a.Oculto ? "1" : "0", a.Pct.ToString(), a.Visto.Ticks.ToString() }));
+                    a.Limite.ToString(), a.Oculto ? "1" : "0", a.Pct.ToString(), a.Visto.Ticks.ToString(), a.NaBarra ? "1" : "0" }));
             File.WriteAllLines(arqConfig, l, System.Text.Encoding.UTF8);
         }
         catch { }
@@ -1117,6 +1166,7 @@ class App : ApplicationContext
         SalvarConfig();
         icone.Visible = false;
         foreach (var ni in numeros.Values) ni.Visible = false;
+        faixa.Fechar();
         try { Process.Start(exe, "--atualizado"); } catch { }
         Application.Exit();
     }

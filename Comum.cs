@@ -846,8 +846,9 @@ class Configuracoes : Form
         if (pagina == 0)
         {
             Cab("Barra de tarefas");
-            Chave("Mostrar a % de cada aparelho", "Além do ícone do Volt, um ícone com o número de cada aparelho perto do relógio", () => app.NumerosBarra, v => app.DefinirNumeros(v));
-            Chave("Fixar os ícones na barra", "Deixa os ícones sempre visíveis ao lado do relógio, em vez de escondidos no ^", () => app.FixarBandeja, v => app.AplicarFixar(v));
+            Nota("Ao lado do relógio aparece o ícone do aparelho e a bateria (ex.: mouse 52%). Escolha em Aparelhos quais ficam sempre ali.");
+            Chave("Mostrar quando a bateria estiver acabando", "O aparelho aparece sozinho na barra ao chegar no limite de aviso, e some depois de carregar", () => app.MostrarFracos, v => app.DefinirFracos(v));
+            Chave("Ícone do Volt sempre visível", "Deixa o ícone do Volt ao lado do relógio. Desligado, ele fica guardado no ^", () => app.FixarBandeja, v => app.AplicarFixar(v));
 
             Cab("Leitura");
             Botao("Ler a bateria a cada", "Com que frequência o Volt pergunta a bateria aos aparelhos. Ao abrir o painel ele também lê na hora",
@@ -920,7 +921,7 @@ class Configuracoes : Form
                 var a = ap;
                 string desc = (a.NomeOrig != app.NomeDe(a) ? "Original: " + a.NomeOrig + " · " : "") + a.Via + (a.Pct >= 0 ? " · " + a.Pct + "%" : "") +
                               (a.Presente ? "" : " · visto " + Volt.Ha(a.Visto));
-                Botao(app.NomeDe(a), desc, () => a.Oculto ? "Escondido" : "", r =>
+                Botao(app.NomeDe(a), desc, () => a.Oculto ? "Escondido" : a.NaBarra ? "Na barra" : "", r =>
                 {
                     var m = NovoMenu();
                     var ren = new ToolStripMenuItem("Renomear…");
@@ -932,6 +933,9 @@ class Configuracoes : Form
                         volta.Click += (s, e) => { a.Nome = null; app.SalvarConfig(); app.Mudou(); };
                         m.Items.Add(volta);
                     }
+                    var nb = new ToolStripMenuItem("Sempre mostrar na barra de tarefas") { Checked = a.NaBarra };
+                    nb.Click += (s, e) => app.FixarNaBarra(a, !a.NaBarra);
+                    m.Items.Add(nb);
                     var oc = new ToolStripMenuItem("Mostrar no painel") { Checked = !a.Oculto };
                     oc.Click += (s, e) => { a.Oculto = !a.Oculto; app.SalvarConfig(); app.Mudou(); };
                     m.Items.Add(oc);

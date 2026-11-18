@@ -12,7 +12,7 @@ if not exist "%CSC%" (
 cd /d "%~dp0"
 set ICO=
 if exist Volt.ico set ICO=/win32icon:Volt.ico
-"%CSC%" /nologo /target:winexe /optimize /platform:anycpu %ICO% /out:Volt.exe Volt.cs Painel.cs Leitura.cs Comum.cs
+"%CSC%" /nologo /target:winexe /optimize /platform:anycpu %ICO% /win32manifest:Volt.manifest /out:Volt.exe Volt.cs Painel.cs Leitura.cs Comum.cs Barra.cs
 if errorlevel 1 (
     echo.
     echo Erro ao compilar.
