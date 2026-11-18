@@ -32,6 +32,7 @@ static class Leitor
         var hids = Hid.Listar();
         try { Logitech.Ler(hids, l); } catch (Exception ex) { Registro.Erro(ex); }
         try { PlayStation.Ler(hids, l); } catch (Exception ex) { Registro.Erro(ex); }
+        try { AttackShark.Ler(hids, l); } catch (Exception ex) { Registro.Erro(ex); }
         int xbox = 0;
         try { xbox = Controles.LerWgi(l); } catch (Exception ex) { Registro.Erro(ex); }
         if (xbox == 0) try { Controles.LerXInput(l); } catch (Exception ex) { Registro.Erro(ex); }
@@ -194,9 +195,11 @@ class DispHid : IDisposable
     bool lendo;
     public bool Ok { get { return !h.IsInvalid; } }
 
-    public DispHid(ColecaoHid c)
+    public DispHid(ColecaoHid c) : this(c, false) { }
+    // somenteLeitura: abre sem permissao de escrita (o Windows recusa qualquer envio ao aparelho)
+    public DispHid(ColecaoHid c, bool somenteLeitura)
     {
-        h = Hid.CreateFile(c.Caminho, 0xC0000000, 3, IntPtr.Zero, 3, 0x40000000 /*OVERLAPPED*/, IntPtr.Zero);
+        h = Hid.CreateFile(c.Caminho, somenteLeitura ? 0x80000000 : 0xC0000000, 3, IntPtr.Zero, 3, 0x40000000 /*OVERLAPPED*/, IntPtr.Zero);
         tamEntrada = Math.Max(c.TamEntrada, 64);
         ov = Marshal.AllocHGlobal(IntPtr.Size == 8 ? 32 : 20);
         for (int i = 0; i < (IntPtr.Size == 8 ? 32 : 20); i++) Marshal.WriteByte(ov, i, 0);
@@ -817,6 +820,64 @@ static class PlayStation
         pct = Math.Min(100, n * 10 + 5);
         carregando = estado == 1;
         if (estado == 2) { pct = 100; carregando = true; }
+        return true;
+    }
+}
+
+// =====================================================================
+//  Attack Shark (X11 e outros com chip Xenta, VID 1D57): receptor 2.4 GHz (FA60) ou cabo (FA55).
+//  O mouse manda sozinho, a cada ~2 s, o relatorio 03 MM 40 EE NN na colecao de pagina 0x0A:
+//  MM = modelo (0x55 = X11), EE = estado (01 bateria, 02 na energia, 03 carregando), NN = %.
+//  So escuta: abre sem permissao de escrita e nunca envia nada.
+//  Ao (re)conectar ele manda um "100%" solto, por isso so vale o valor que chega 2 vezes seguidas.
+//  Protocolo descrito por projetos abertos (attackshark-battery-windows, attackshark-x11-linux).
+// =====================================================================
+static class AttackShark
+{
+    static readonly Dictionary<string, int> ultimo = new Dictionary<string, int>();   // ultimo valor aceito (estado*1000 + %)
+
+    public static void Ler(List<ColecaoHid> hids, List<Aparelho> saida)
+    {
+        foreach (var c in hids)
+        {
+            if (c.Vid != 0x1D57 || (c.Pid != 0xFA60 && c.Pid != 0xFA55) || c.Pagina != 0x0A || c.TamEntrada < 5) continue;
+            int modelo = -1, aceito = -1, anterior = -1;
+            int jaVisto; bool temUltimo = ultimo.TryGetValue(c.Fisico, out jaVisto);
+            using (var d = new DispHid(c, true))
+            {
+                if (!d.Ok) continue;
+                var fim = DateTime.Now.AddMilliseconds(4600);   // chega 1 a cada ~2 s: da tempo de ver 2
+                while (aceito < 0 && DateTime.Now < fim)
+                {
+                    var r = d.Ler(250);
+                    int m, est, pct;
+                    if (r == null || !Analisar(r, out m, out est, out pct)) continue;
+                    int v = est * 1000 + pct;
+                    if (v == anterior || (temUltimo && v == jaVisto)) { aceito = v; modelo = m; }
+                    anterior = v;
+                }
+            }
+            if (aceito < 0) continue;   // silencio: desligado, dormindo ou no Bluetooth (nunca quer dizer 0%)
+            ultimo[c.Fisico] = aceito;
+            int estado = aceito / 1000;
+            saida.Add(new Aparelho
+            {
+                Chave = "attackshark:" + c.Fisico.GetHashCode().ToString("X8"),
+                Nome = NomeDoModelo(modelo), Tipo = Tipo.Mouse,
+                Via = c.Pid == 0xFA60 ? "Receptor 2.4 GHz" : "Cabo USB",
+                Pct = aceito % 1000, Carregando = estado == 2 || estado == 3
+            });
+        }
+    }
+
+    public static string NomeDoModelo(int m) { return m == 0x55 ? "Attack Shark X11" : "Mouse Attack Shark"; }
+
+    public static bool Analisar(byte[] r, out int modelo, out int estado, out int pct)
+    {
+        modelo = estado = pct = -1;
+        if (r == null || r.Length < 5 || r[0] != 0x03 || r[2] != 0x40) return false;
+        if (r[3] < 1 || r[3] > 3 || r[4] > 100) return false;
+        modelo = r[1]; estado = r[3]; pct = r[4];
         return true;
     }
 }

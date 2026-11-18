@@ -16,8 +16,8 @@ using Timer = System.Windows.Forms.Timer;
 [assembly: AssemblyTitle("Volt")]
 [assembly: AssemblyProduct("Volt")]
 [assembly: AssemblyDescription("Bateria dos aparelhos sem fio na bandeja do Windows")]
-[assembly: AssemblyVersion("1.0.3.0")]
-[assembly: AssemblyFileVersion("1.0.3.0")]
+[assembly: AssemblyVersion("1.0.4.0")]
+[assembly: AssemblyFileVersion("1.0.4.0")]
 
 static class Program
 {
@@ -151,6 +151,11 @@ static class Program
         ok("DualSense carregando 45%", PlayStation.Analisar(0x0CE6, false, ds, out pct, out car) && pct == 45 && car);
         ds[53] = 0x2A;                                                   // cheio
         ok("DualSense carga completa", PlayStation.Analisar(0x0CE6, false, ds, out pct, out car) && pct == 100);
+        int asM, asE, asP;
+        ok("Attack Shark X11 no receptor 84%", AttackShark.Analisar(new byte[] { 0x03, 0x55, 0x40, 0x01, 0x54 }, out asM, out asE, out asP) && asP == 84 && asE == 1 && AttackShark.NomeDoModelo(asM) == "Attack Shark X11");
+        ok("Attack Shark carregando", AttackShark.Analisar(new byte[] { 0x03, 0x55, 0x40, 0x03, 0x3C }, out asM, out asE, out asP) && asE == 3 && asP == 60);
+        ok("Attack Shark ignora outro relatorio", !AttackShark.Analisar(new byte[] { 0x03, 0x55, 0x01, 0x00, 0x00 }, out asM, out asE, out asP));
+        ok("Attack Shark ignora % invalido", !AttackShark.Analisar(new byte[] { 0x03, 0x55, 0x40, 0x01, 0xC8 }, out asM, out asE, out asP));
         ok("Poupar: 78 -> 81 carregando avisa", App.DeveAvisarPoupar(80, true, false, 78, 81));
         ok("Poupar: 81 -> 83 nao repete", !App.DeveAvisarPoupar(80, true, false, 81, 83));
         ok("Poupar: sem carregar nao avisa", !App.DeveAvisarPoupar(80, false, false, 78, 81));

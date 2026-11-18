@@ -24,6 +24,7 @@
 | **Bluetooth** (fones, mouses, teclados, controles) | A mesma bateria de *Configurações ▸ Bluetooth e dispositivos* |
 | **Samsung Galaxy Buds** | Esquerdo, direito e estojo, pela mensagem de estado que os fones enviam (o app Galaxy Buds precisa estar fechado) |
 | **Logitech** (receptores Unifying, Bolt, Lightspeed; cabo e Bluetooth; fones G) | Protocolo HID++ da Logitech |
+| **Attack Shark** (X11 e outros com receptor 1D57:FA60, ou no cabo) | Escuta o aviso de bateria que o próprio mouse manda a cada ~2 s (sem enviar nada a ele) |
 | **Controles Xbox** | % de verdade pelo Windows (Windows.Gaming.Input); nível aproximado se não houver |
 | **Controles PlayStation** (DualSense, DualSense Edge, DualShock 4), USB ou Bluetooth | Bateria do relatório do próprio controle |
 | **Celular Android** | Pelo app *Vincular ao Celular* do Windows (lê o cartão do celular que o Windows guarda) |
