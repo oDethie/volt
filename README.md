@@ -24,7 +24,9 @@
 | **Bluetooth** (fones, mouses, teclados, controles) | A mesma bateria de *Configurações ▸ Bluetooth e dispositivos* |
 | **Samsung Galaxy Buds** | Esquerdo, direito e estojo, pela mensagem de estado que os fones enviam (o app Galaxy Buds precisa estar fechado) |
 | **Logitech** (receptores Unifying, Bolt, Lightspeed; cabo e Bluetooth; fones G) | Protocolo HID++ da Logitech |
-| **Controles Xbox** | XInput (nível aproximado) |
+| **Controles Xbox** | % de verdade pelo Windows (Windows.Gaming.Input); nível aproximado se não houver |
+| **Controles PlayStation** (DualSense, DualSense Edge, DualShock 4), USB ou Bluetooth | Bateria do relatório do próprio controle |
+| **Celular Android** | Pelo app *Vincular ao Celular* do Windows (lê o cartão do celular que o Windows guarda) |
 | **Aparelhos USB que seguem o padrão HID de bateria** | Uso "Battery Strength" do padrão HID |
 
 O Volt **só faz perguntas de leitura** aos aparelhos: nunca grava nada neles. `Volt.exe --diagnostico arquivo.txt` lista o que o Volt enxerga no seu PC (útil para pedir suporte a um aparelho novo).

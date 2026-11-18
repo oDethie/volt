@@ -8,7 +8,7 @@ using System.Text;
 using System.Threading;
 using Microsoft.Win32.SafeHandles;
 
-enum Tipo { Outro, Mouse, Fone, Teclado, Controle }
+enum Tipo { Outro, Mouse, Fone, Teclado, Controle, Celular }
 
 class Aparelho
 {
@@ -31,7 +31,11 @@ static class Leitor
         var l = new List<Aparelho>();
         var hids = Hid.Listar();
         try { Logitech.Ler(hids, l); } catch (Exception ex) { Registro.Erro(ex); }
-        try { Controles.LerXInput(l); } catch (Exception ex) { Registro.Erro(ex); }
+        try { PlayStation.Ler(hids, l); } catch (Exception ex) { Registro.Erro(ex); }
+        int xbox = 0;
+        try { xbox = Controles.LerWgi(l); } catch (Exception ex) { Registro.Erro(ex); }
+        if (xbox == 0) try { Controles.LerXInput(l); } catch (Exception ex) { Registro.Erro(ex); }
+        try { Celular.Ler(l); } catch (Exception ex) { Registro.Erro(ex); }
         try { GalaxyBuds.Ler(l); } catch (Exception ex) { Registro.Erro(ex); }
         try { Bluetooth.Ler(l); } catch (Exception ex) { Registro.Erro(ex); }
         try { HidPadrao.Ler(hids, l); } catch (Exception ex) { Registro.Erro(ex); }
@@ -181,6 +185,8 @@ class DispHid : IDisposable
     [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
     [DllImport("kernel32.dll")] static extern uint WaitForSingleObject(IntPtr h, uint ms);
     [DllImport("kernel32.dll")] static extern bool ResetEvent(IntPtr h);
+    [DllImport("hid.dll")] static extern bool HidD_GetFeature(SafeFileHandle h, byte[] b, int n);
+    public bool LerRecurso(byte id, int tam) { if (!Ok || tam <= 0) return false; var b = new byte[tam]; b[0] = id; return HidD_GetFeature(h, b, tam); }
 
     readonly SafeFileHandle h;
     readonly IntPtr ov, ev, buf;
@@ -753,10 +759,148 @@ static class GalaxyBuds
 }
 
 // =====================================================================
+//  Controles PlayStation (DualShock 4, DualSense, DualSense Edge), por USB ou Bluetooth.
+//  A bateria vem no relatorio normal do controle (so leitura):
+//    DualShock 4: USB relatorio 01 byte 30, Bluetooth relatorio 11 byte 32: bits 0-3 nivel, bit 4 cabo
+//    DualSense:   USB relatorio 01 byte 53, Bluetooth relatorio 31 byte 54: bits 0-3 nivel (0-10), bits 4-7 estado
+//  No Bluetooth eles mandam um relatorio reduzido ate alguem ler o relatorio de recurso 05 (calibracao),
+//  como os jogos fazem. Layout: driver hid-playstation do Linux.
+// =====================================================================
+static class PlayStation
+{
+    static bool Ds4(ushort pid) { return pid == 0x05C4 || pid == 0x09CC || pid == 0x0BA0; }
+    static bool DualSense(ushort pid) { return pid == 0x0CE6 || pid == 0x0DF2; }
+
+    public static void Ler(List<ColecaoHid> hids, List<Aparelho> saida)
+    {
+        foreach (var c in hids)
+        {
+            if (c.Vid != 0x054C || !(Ds4(c.Pid) || DualSense(c.Pid)) || c.Pagina != 0x01 || c.Uso != 0x05) continue;
+            bool bt = c.TamEntrada > 64;
+            int pct = -1; bool carregando = false;
+            using (var d = new DispHid(c))
+            {
+                if (!d.Ok) continue;
+                if (bt) d.LerRecurso(0x05, Math.Max(41, c.TamRecurso));   // passa a mandar o relatorio completo
+                var fim = DateTime.Now.AddMilliseconds(600);
+                while (pct < 0 && DateTime.Now < fim)
+                {
+                    var r = d.Ler(100);
+                    if (r == null) continue;
+                    if (!Analisar(c.Pid, bt, r, out pct, out carregando)) pct = -1;
+                }
+            }
+            if (pct < 0) continue;
+            string nome = Ds4(c.Pid) ? "DualShock 4" : c.Pid == 0x0DF2 ? "DualSense Edge" : "DualSense";
+            saida.Add(new Aparelho { Chave = "ps:" + c.Pid.ToString("X4") + ":" + c.Fisico.GetHashCode().ToString("X8"), Nome = nome, Tipo = Tipo.Controle,
+                Via = bt ? "Bluetooth" : c.Pid == 0x0BA0 ? "Adaptador sem fio" : "Cabo USB", Pct = pct, Carregando = carregando });
+        }
+    }
+
+    public static bool Analisar(ushort pid, bool bt, byte[] r, out int pct, out bool carregando)
+    {
+        pct = -1; carregando = false;
+        if (r.Length < 10) return false;
+        if (Ds4(pid))
+        {
+            int at = r[0] == 0x01 ? 30 : r[0] == 0x11 ? 32 : 0;
+            if (at == 0 || r.Length <= at || (r[0] == 0x01 && bt)) return false;
+            if (pid == 0x0BA0 && r[at] == 0) return false;          // adaptador sem controle
+            int nivel = r[at] & 0x0F; bool cabo = (r[at] & 0x10) != 0;
+            pct = cabo ? (nivel >= 11 ? 100 : Math.Min(100, nivel * 10)) : Math.Min(100, nivel * 10 + 5);
+            carregando = cabo && nivel < 11;
+            return true;
+        }
+        int a = r[0] == 0x01 ? 53 : r[0] == 0x31 ? 54 : 0;
+        if (a == 0 || r.Length <= a || (r[0] == 0x01 && bt)) return false;
+        int n = r[a] & 0x0F, estado = r[a] >> 4;
+        pct = Math.Min(100, n * 10 + 5);
+        carregando = estado == 1;
+        if (estado == 2) { pct = 100; carregando = true; }
+        return true;
+    }
+}
+
+// =====================================================================
+//  Celular Android pelo app Vincular ao Celular (Phone Link) do Windows.
+//  O app mantem o cartao do celular do menu Iniciar num arquivo; so o nome e a bateria sao lidos
+//  (o resto, como notificacoes, e ignorado). Sem Bluetooth nem rede: so leitura de um arquivo do proprio PC.
+// =====================================================================
+static class Celular
+{
+    static string Arq { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        @"Packages\Microsoft.YourPhone_8wekyb3d8bbwe\LocalState\StartMenu\StartMenuCompanion.json"); } }
+
+    public static void Ler(List<Aparelho> saida)
+    {
+        var f = new FileInfo(Arq);
+        if (!f.Exists || f.Length > 4 * 1024 * 1024) return;
+        if ((DateTime.Now - f.LastWriteTime).TotalHours > 3) return;      // cartao antigo: celular desconectado
+        string json;
+        using (var st = new FileStream(Arq, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+        using (var sr = new StreamReader(st, Encoding.UTF8)) json = sr.ReadToEnd();
+        string nome; int pct;
+        if (!Analisar(json, out nome, out pct)) return;
+        saida.Add(new Aparelho { Chave = "celular", Nome = nome, Tipo = Tipo.Celular, Via = "Vincular ao Celular", Pct = pct });
+    }
+
+    // "speak": "<nome do celular> - Connected to your PC" (ou em portugues) e "Battery 80% remaining" / "Bateria: 80%"
+    public static bool Analisar(string json, out string nome, out int pct)
+    {
+        nome = null; pct = -1;
+        var m = System.Text.RegularExpressions.Regex.Match(json, "\"speak\"\\s*:\\s*\"([^\"]{1,120})\"");
+        if (!m.Success) return false;
+        string fala = System.Text.RegularExpressions.Regex.Unescape(m.Groups[1].Value);
+        var mn = System.Text.RegularExpressions.Regex.Match(fala, "^(.+?)\\s+-\\s+(Connected to your PC|Conectado ao seu PC|Conectado ao PC|Conectado ao computador)",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (!mn.Success) return false;
+        var mb = System.Text.RegularExpressions.Regex.Match(json, "(?:Battery|Bateria)\\D{0,12}?(\\d{1,3})\\s?%", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (!mb.Success) return false;
+        int v = int.Parse(mb.Groups[1].Value);
+        if (v < 0 || v > 100) return false;
+        nome = mn.Groups[1].Value.Trim(); pct = v;
+        return true;
+    }
+}
+
+// =====================================================================
 //  Controles Xbox (XInput): o Windows informa so o nivel (vazio, baixo, medio, cheio)
 // =====================================================================
 static class Controles
 {
+    // Xbox e compativeis pelo Windows.Gaming.Input: a % de verdade (carga em mWh). Devolve quantos achou.
+    public static int LerWgi(List<Aparelho> saida)
+    {
+        var tipo = Type.GetType("Windows.Gaming.Input.RawGameController, Windows.Gaming, ContentType=WindowsRuntime");
+        if (tipo == null) return 0;
+        var lista = tipo.GetProperty("RawGameControllers").GetValue(null) as System.Collections.IEnumerable;
+        if (lista == null) return 0;
+        int n = 0;
+        foreach (var c in lista)
+        {
+            var t = c.GetType();
+            int vid = Convert.ToInt32(t.GetProperty("HardwareVendorId").GetValue(c));
+            if (vid != 0x045E) continue;                          // Microsoft (Xbox)
+            var rel = t.GetMethod("TryGetBatteryReport").Invoke(c, null);
+            if (rel == null) continue;
+            var tr = rel.GetType();
+            object resto = tr.GetProperty("RemainingCapacityInMilliwattHours").GetValue(rel), cheio = tr.GetProperty("FullChargeCapacityInMilliwattHours").GetValue(rel);
+            int status = Convert.ToInt32(tr.GetProperty("Status").GetValue(rel));   // 0 sem bateria, 1 descarregando, 2 parado, 3 carregando
+            if (resto == null || cheio == null || status == 0) continue;
+            double f = Convert.ToDouble(cheio), r = Convert.ToDouble(resto);
+            if (f <= 0) continue;
+            string nome = null;
+            var pn = t.GetProperty("DisplayName");
+            if (pn != null) try { nome = pn.GetValue(c) as string; } catch { }
+            if (string.IsNullOrWhiteSpace(nome)) nome = "Controle Xbox";
+            int pid = Convert.ToInt32(t.GetProperty("HardwareProductId").GetValue(c));
+            saida.Add(new Aparelho { Chave = "xbox:" + pid.ToString("X4") + ":" + n, Nome = nome, Via = "Sem fio", Tipo = Tipo.Controle,
+                Pct = (int)Math.Round(Math.Max(0, Math.Min(100, r * 100 / f))), Carregando = status == 3 });
+            n++;
+        }
+        return n;
+    }
+
     [StructLayout(LayoutKind.Sequential)] struct BATERIA { public byte Tipo, Nivel; }
     [DllImport("xinput1_4.dll")] static extern int XInputGetBatteryInformation(int usuario, byte tipo, out BATERIA b);
 

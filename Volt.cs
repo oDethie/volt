@@ -16,8 +16,8 @@ using Timer = System.Windows.Forms.Timer;
 [assembly: AssemblyTitle("Volt")]
 [assembly: AssemblyProduct("Volt")]
 [assembly: AssemblyDescription("Bateria dos aparelhos sem fio na bandeja do Windows")]
-[assembly: AssemblyVersion("1.0.1.0")]
-[assembly: AssemblyFileVersion("1.0.1.0")]
+[assembly: AssemblyVersion("1.0.2.0")]
+[assembly: AssemblyFileVersion("1.0.2.0")]
 
 static class Program
 {
@@ -44,6 +44,7 @@ static class Program
         if (args.Length == 2 && args[0] == "--icones") { Volt.TesteIcones(args[1]); return; }
         if (args.Length == 2 && args[0] == "--testefaixa") { TesteFaixa(args[1]); return; }
         if (args.Length == 2 && args[0] == "--testebuds") { File.WriteAllLines(args[1], GalaxyBuds.Teste()); return; }
+        if (args.Length == 2 && args[0] == "--testeextras") { File.WriteAllLines(args[1], TesteExtras()); return; }
         if (args.Length == 2 && args[0] == "--testedica")
         {
             float e = 1.75f;
@@ -138,6 +139,33 @@ static class Program
         }
     }
 
+    // testes com dados montados: controles PlayStation e cartao do Vincular ao Celular
+    static List<string> TesteExtras()
+    {
+        var l = new List<string>();
+        Action<string, bool> ok = (n, b) => l.Add((b ? "OK    " : "FALHA ") + n);
+        int pct; bool car;
+        var ds = new byte[64]; ds[0] = 0x01; ds[53] = 0x07;           // DualSense USB, nivel 7, descarregando
+        ok("DualSense USB 75%", PlayStation.Analisar(0x0CE6, false, ds, out pct, out car) && pct == 75 && !car);
+        ds[53] = 0x14;                                                   // carregando, nivel 4
+        ok("DualSense carregando 45%", PlayStation.Analisar(0x0CE6, false, ds, out pct, out car) && pct == 45 && car);
+        ds[53] = 0x2A;                                                   // cheio
+        ok("DualSense carga completa", PlayStation.Analisar(0x0CE6, false, ds, out pct, out car) && pct == 100);
+        var bt = new byte[78]; bt[0] = 0x31; bt[54] = 0x03;
+        ok("DualSense Bluetooth 35%", PlayStation.Analisar(0x0CE6, true, bt, out pct, out car) && pct == 35);
+        var red = new byte[10]; red[0] = 0x01;
+        ok("DualSense Bluetooth reduzido e ignorado", !PlayStation.Analisar(0x0CE6, true, new byte[64] { 0x01, 0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0, 0,0,0,0 }, out pct, out car));
+        var d4 = new byte[64]; d4[0] = 0x01; d4[30] = 0x06;
+        ok("DualShock 4 USB sem cabo 65%", PlayStation.Analisar(0x09CC, false, d4, out pct, out car) && pct == 65 && !car);
+        d4[30] = 0x1B;
+        ok("DualShock 4 no cabo, carregado", PlayStation.Analisar(0x09CC, false, d4, out pct, out car) && pct == 100 && !car);
+        string nome;
+        ok("Celular (ingles)", Celular.Analisar("{\"speak\":\"Galaxy S24 - Connected to your PC\",\"x\":\"Battery 81% remaining\"}", out nome, out pct) && nome == "Galaxy S24" && pct == 81);
+        ok("Celular (portugues)", Celular.Analisar("{\"speak\":\"Moto G - Conectado ao seu PC\",\"t\":\"Bateria: 42%\"}", out nome, out pct) && nome == "Moto G" && pct == 42);
+        ok("Celular desconectado e ignorado", !Celular.Analisar("{\"speak\":\"Moto G - Not connected\",\"t\":\"Battery 42% remaining\"}", out nome, out pct));
+        return l;
+    }
+
     static void SalvarIco(string caminho)
     {
         int[] tams = { 16, 20, 24, 32, 48, 64, 256 };
@@ -188,6 +216,7 @@ static class Volt
             case Tipo.Fone: return '';
             case Tipo.Teclado: return '';
             case Tipo.Controle: return '';
+            case Tipo.Celular: return '\uE8EA';
             default: return '';
         }
     }
