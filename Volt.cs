@@ -490,7 +490,7 @@ class App : ApplicationContext
         msg.Abrir = () => { if (!painel.Visible) painel.Mostrar(); };
         msg.Tema = () => { chaveIcone = null; Postar(AtualizarIcones); };
 
-        icone = new NotifyIcon { Visible = true, Text = "Volt" };
+        icone = new NotifyIcon { Visible = false, Text = "Volt" };
         icone.MouseUp += (s, e) => { if (e.Button == MouseButtons.Left) painel.Alternar(); };
         icone.ContextMenuStrip = menu;
         menu.Opening += (s, e) => { MenuAberto = true; MontarMenu(); };
@@ -499,6 +499,9 @@ class App : ApplicationContext
         tDebounce.Tick += (s, e) => { tDebounce.Stop(); pedido.Set(); };
         tFila.Tick += (s, e) => MostrarFila();
         AtualizarIcones();
+        // o Windows so le "guardado no ^" quando o icone entra na bandeja: marca antes de mostrar
+        FixarIcone(FixarBandeja);
+        icone.Visible = true;
 
         // leitura em segundo plano: parada entre uma leitura e outra (sem gastar CPU)
         new Thread(LoopLeitura) { IsBackground = true, Name = "Volt.Leitura", Priority = ThreadPriority.BelowNormal }.Start();
