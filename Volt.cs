@@ -16,8 +16,8 @@ using Timer = System.Windows.Forms.Timer;
 [assembly: AssemblyTitle("Volt")]
 [assembly: AssemblyProduct("Volt")]
 [assembly: AssemblyDescription("Bateria dos aparelhos sem fio na bandeja do Windows")]
-[assembly: AssemblyVersion("1.0.2.0")]
-[assembly: AssemblyFileVersion("1.0.2.0")]
+[assembly: AssemblyVersion("1.0.3.0")]
+[assembly: AssemblyFileVersion("1.0.3.0")]
 
 static class Program
 {
@@ -151,6 +151,13 @@ static class Program
         ok("DualSense carregando 45%", PlayStation.Analisar(0x0CE6, false, ds, out pct, out car) && pct == 45 && car);
         ds[53] = 0x2A;                                                   // cheio
         ok("DualSense carga completa", PlayStation.Analisar(0x0CE6, false, ds, out pct, out car) && pct == 100);
+        ok("Poupar: 78 -> 81 carregando avisa", App.DeveAvisarPoupar(80, true, false, 78, 81));
+        ok("Poupar: 81 -> 83 nao repete", !App.DeveAvisarPoupar(80, true, false, 81, 83));
+        ok("Poupar: sem carregar nao avisa", !App.DeveAvisarPoupar(80, false, false, 78, 81));
+        ok("Poupar: pulou para 100 fica com o aviso de cheio", !App.DeveAvisarPoupar(80, true, false, 70, 100));
+        ok("Poupar: desligado nao avisa", !App.DeveAvisarPoupar(0, true, false, 78, 81));
+        ok("Poupar: nivel aproximado (Xbox) nao avisa", !App.DeveAvisarPoupar(80, true, true, 78, 81));
+        ok("Poupar: recem aberto (sem leitura anterior) nao avisa", !App.DeveAvisarPoupar(80, true, false, -1, 85));
         var bt = new byte[78]; bt[0] = 0x31; bt[54] = 0x03;
         ok("DualSense Bluetooth 35%", PlayStation.Analisar(0x0CE6, true, bt, out pct, out car) && pct == 35);
         var red = new byte[10]; red[0] = 0x01;
@@ -200,7 +207,7 @@ class Estado
     public bool NaBarra;                           // sempre mostrar na barra de tarefas
     public int Limite = -1;                        // -1 = limite padrao
     public DateTime Visto;
-    public bool AvisouFraca, AvisouCritica, AvisouCheio, AvisouPrevisao;
+    public bool AvisouFraca, AvisouCritica, AvisouCheio, AvisouPrevisao, AvisouPoupar;
     public string Detalhe;
     public int[] Partes;                           // fones: esquerdo, direito, estojo (-1 = sem informacao)
     public int Prazo = 0;                          // segundos para manter o ultimo valor se sumir (receptor: aparelho dormindo)
@@ -617,6 +624,7 @@ class App : ApplicationContext
     // ---- configuracao ----
     public bool MostrarFracos = true, Animacoes = true, MenuLateralAberto = true, AtualizarSozinho = true;
     public bool AvisarFraca = true, AvisarCheio = true, AvisarPrevisao = true;
+    public int PouparEm = 80;   // aviso "pode tirar do carregador" (0 = desligado)
     public int LimitePadrao = 20, Intervalo = 2;
     string tema = "auto";
     string cfgVersao = "";
@@ -771,6 +779,7 @@ class App : ApplicationContext
         int lim = LimiteDe(a);
         if (a.Carregando || a.Pct > lim + 3) { a.AvisouFraca = false; a.AvisouCritica = false; }
         if (!a.Carregando || a.Pct < 95) a.AvisouCheio = false;
+        if (!a.Carregando || a.Pct < PouparEm - 5) a.AvisouPoupar = false;
         if (a.Carregando) a.AvisouPrevisao = false;
         if (a.Oculto || a.Pct < 0) return;
         string nome = NomeDe(a);
@@ -785,9 +794,16 @@ class App : ApplicationContext
             if (a.Pct <= Math.Max(5, lim / 2) && !a.AvisouCritica) { a.AvisouCritica = a.AvisouFraca = true; Avisar('', nome + " com " + a.Pct + "%: carregue agora"); }
             else if (a.Pct <= lim && !a.AvisouFraca) { a.AvisouFraca = true; Avisar('', nome + " com bateria fraca (" + a.Pct + "%)"); }
         }
+        // poupar a bateria: parar antes dos 100% gasta menos a bateria com o tempo
+        if (!a.AvisouPoupar && DeveAvisarPoupar(PouparEm, a.Carregando, a.Aproximado, antes, a.Pct))
+        { a.AvisouPoupar = true; Avisar('', nome + " chegou a " + a.Pct + "%: pode tirar do carregador para poupar a bateria"); }
         if (AvisarCheio && a.Carregando && a.Pct >= 100 && !a.AvisouCheio && antes >= 0 && antes < 100)
         { a.AvisouCheio = true; Avisar('', nome + " carregou 100%: pode tirar do cabo"); }
     }
+
+    // passou do limite agora (subindo), carregando, com % de verdade e antes de encher
+    public static bool DeveAvisarPoupar(int limite, bool carregando, bool aproximado, int antes, int agora)
+    { return limite > 0 && carregando && !aproximado && antes >= 0 && antes < limite && agora >= limite && agora < 100; }
 
     // aviso discreto; com jogo/video em tela cheia espera
     public void Avisar(char gl, string txt)
@@ -1280,6 +1296,7 @@ class App : ApplicationContext
                     case "avisar_fraca": AvisarFraca = v == "1"; break;
                     case "avisar_cheio": AvisarCheio = v == "1"; break;
                     case "avisar_previsao": AvisarPrevisao = v == "1"; break;
+                    case "poupar": if (int.TryParse(v, out n) && (n == 0 || (n >= 50 && n <= 95))) PouparEm = n; break;
                     case "limite": if (int.TryParse(v, out n) && n >= 5 && n <= 60) LimitePadrao = n; break;
                     case "intervalo": if (int.TryParse(v, out n) && n >= 1 && n <= 60) Intervalo = n; break;
                     case "tema": if (v == "auto" || v == "claro" || v == "escuro") tema = v; break;
@@ -1312,7 +1329,7 @@ class App : ApplicationContext
                 "cfg=" + (cfgVersao == "3" ? "3" : "2"), "barra_fracos=" + (MostrarFracos ? 1 : 0), "animacoes=" + (Animacoes ? 1 : 0),
                 "menu_lateral=" + (MenuLateralAberto ? 1 : 0), "atualizar=" + (AtualizarSozinho ? 1 : 0),
                 "avisar_fraca=" + (AvisarFraca ? 1 : 0), "avisar_cheio=" + (AvisarCheio ? 1 : 0), "avisar_previsao=" + (AvisarPrevisao ? 1 : 0),
-                "limite=" + LimitePadrao, "intervalo=" + Intervalo, "tema=" + tema };
+                "poupar=" + PouparEm, "limite=" + LimitePadrao, "intervalo=" + Intervalo, "tema=" + tema };
             foreach (var a in aparelhos.Values)
                 l.Add("aparelho=" + string.Join("|", new[] { a.Chave, Limpo(a.NomeOrig), Limpo(a.Nome), a.Tipo.ToString(), Limpo(a.Via),
                     a.Limite.ToString(), a.Oculto ? "1" : "0", a.Pct.ToString(), a.Visto.Ticks.ToString(), a.NaBarra ? "1" : "0" }));

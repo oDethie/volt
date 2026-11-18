@@ -10,7 +10,7 @@
 - **Passe o mouse** num aparelho da barra para ver um cartão com nome, bateria, previsão e de onde vem.
 - **Painel em lista com barras:** um cartão por aparelho com %, barra colorida (verde ok, amarelo atenção, vermelho fraco, azul carregando), origem e **previsão** ("dura ~3 dias", "cheio em ~40 min"). O que precisa de atenção sobe para o topo.
 - **Clique num aparelho** para ver o **gráfico** das últimas horas/dias e a **saúde da bateria** (se ela está durando menos que no começo).
-- **Avisos:** bateria fraca (limite padrão e por aparelho), **aviso inteligente** quando o aparelho não deve durar as próximas 12 horas, e **carga completa**. Durante jogos e vídeos em tela cheia eles esperam.
+- **Avisos:** bateria fraca (limite padrão e por aparelho), **aviso inteligente** quando o aparelho não deve durar as próximas 12 horas, **"pode tirar do carregador"** ao chegar em 80% (ou 85%/90%, para a bateria durar mais anos) e **carga completa**. Durante jogos e vídeos em tela cheia eles esperam.
 - **Galaxy Buds:** fone esquerdo, direito e estojo separados.
 - O Volt em si fica guardado no **^** perto do relógio.
 - **Instala, atualiza e desinstala sozinho:** abra o `Volt.exe` baixado e ele se instala (sem administrador). Aparece no menu Iniciar e em *Configurações ▸ Aplicativos*.

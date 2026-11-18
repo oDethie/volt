@@ -902,6 +902,9 @@ class Configuracoes : Form
             Botao("Limite padrão", "Vale para os aparelhos sem um limite próprio", () => app.LimitePadrao + "%", r => MenuLimite(r, app.LimitePadrao, false, v => { app.LimitePadrao = v; app.SalvarConfig(); app.Mudou(); }));
             Cab("Aviso inteligente");
             Chave("Avisar quando não for durar o dia", "Pelo ritmo de uso, avisa quando o aparelho deve acabar nas próximas 12 horas, antes de chegar no limite", () => app.AvisarPrevisao, v => { app.AvisarPrevisao = v; app.SalvarConfig(); });
+            Cab("Poupar a bateria");
+            Botao("Avisar para tirar do carregador", "Carregar sempre até 100% desgasta a bateria mais rápido. Parar por volta de 80% faz ela durar mais anos",
+                () => app.PouparEm == 0 ? "Desligado" : "Em " + app.PouparEm + "%", r => MenuPoupar(r));
             Cab("Carga completa");
             Chave("Avisar quando terminar de carregar", "Para tirar do cabo e poupar a bateria", () => app.AvisarCheio, v => { app.AvisarCheio = v; app.SalvarConfig(); });
 
@@ -956,6 +959,19 @@ class Configuracoes : Form
                 }, Volt.Glifo(a.Tipo));
             }
         }
+    }
+
+    void MenuPoupar(Rectangle r)
+    {
+        var m = NovoMenu();
+        foreach (var n in new[] { 0, 80, 85, 90 })
+        {
+            int v = n;
+            var it = new ToolStripMenuItem(v == 0 ? "Desligado" : "Em " + v + "%") { Checked = app.PouparEm == v };
+            it.Click += (s, e) => { app.PouparEm = v; app.SalvarConfig(); app.Mudou(); };
+            m.Items.Add(it);
+        }
+        MostrarMenu(m, r);
     }
 
     void MenuLimite(Rectangle r, int atual, bool comPadrao, Action<int> definir)
